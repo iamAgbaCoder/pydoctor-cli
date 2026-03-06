@@ -1,14 +1,70 @@
+[build-system]
+requires      = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "pydoctor-cli"
-version = "0.1.0"
-description = "Python environment diagnostic CLI"
-authors = [
-    {name="Favour Bamgboye"}
-]
+name        = "pydoctor-cli"
+version     = "0.1.0"
+description = "🩺 Python environment diagnostic CLI — your project's doctor."
+readme      = "README.md"
+license     = { file = "LICENSE" }
+authors     = [{ name = "Favour Bamgboye" }]
+
+requires-python = ">=3.10"
+
 dependencies = [
-    "typer",
-    "rich"
+    "typer>=0.12",
+    "rich>=13",
+    "requests>=2.28",
+    "packaging>=23",
+    "pipdeptree>=2.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov",
+    "ruff",
+    "black",
+    "mypy",
+    "types-requests",
 ]
 
 [project.scripts]
-pydoctor = "pydoctor.cli:main"
+pydoctor = "pydoctor.cli.main:main"
+
+[project.urls]
+"Homepage"    = "https://github.com/iamAgbaCoder/pydoctor-cli"
+"Bug Tracker" = "https://github.com/iamAgbaCoder/pydoctor-cli/issues"
+
+# ──────────────────────────────────────────────────────────────
+# Tool configs
+# ──────────────────────────────────────────────────────────────
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "W", "I", "UP", "B", "C90"]
+ignore = ["E501"]
+
+[tool.black]
+line-length    = 100
+target-version = ["py310", "py311"]
+
+[tool.mypy]
+python_version         = "3.11"
+strict                 = false
+ignore_missing_imports = true
+warn_unused_ignores    = true
+
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+addopts      = "-v --tb=short"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["pydoctor"]
+omit   = ["tests/*", "setup.py"]
