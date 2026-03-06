@@ -1,0 +1,14 @@
+[project]
+name = "pydoctor-cli"
+version = "0.1.0"
+description = "Python environment diagnostic CLI"
+authors = [
+    {name="Favour Bamgboye"}
+]
+dependencies = [
+    "typer",
+    "rich"
+]
+
+[project.scripts]
+pydoctor = "pydoctor.cli:main"
