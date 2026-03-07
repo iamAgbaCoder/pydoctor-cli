@@ -15,11 +15,11 @@ Threads share the GIL effectively here — no need for multiprocessing overhead.
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Callable, Iterable, TypeVar, Any
+from collections.abc import Callable, Iterable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any, TypeVar
 
 from pydoctor.config.settings import MAX_WORKERS
-
 
 T = TypeVar("T")
 
@@ -61,9 +61,7 @@ def run_parallel(
         return results
 
     with ThreadPoolExecutor(max_workers=min(workers, len(item_list))) as executor:
-        future_map: dict[Future, Any] = {
-            executor.submit(fn, item): item for item in item_list
-        }
+        future_map: dict[Future, Any] = {executor.submit(fn, item): item for item in item_list}
         for future in as_completed(future_map, timeout=timeout):
             try:
                 result = future.result()
@@ -95,7 +93,6 @@ def run_parallel_dict(
     -------
     list[T]
     """
-    from functools import partial
 
     results: list[T] = []
     if not mapping:

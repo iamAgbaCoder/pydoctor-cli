@@ -17,20 +17,19 @@ individual scanners — enforcing clean dependency flow.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable
 
 from pydoctor.config.settings import MAX_WORKERS, Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import DiagnosisReport, Issue
 from pydoctor.scanners import (
-    env_scanner,
     dependency_scanner,
+    env_scanner,
     outdated_package_scanner,
-    vulnerability_scanner,
     unused_package_scanner,
+    vulnerability_scanner,
 )
-
 
 # ──────────────────────────────────────────────────────────────
 # Scanner registry
@@ -96,9 +95,7 @@ class Analyzer:
         scanner_timings: dict[str, float] = {}
 
         # Parallel execution for independence (each scanner gets its own thread)
-        with ThreadPoolExecutor(
-            max_workers=min(MAX_WORKERS, len(self._scanner_keys))
-        ) as pool:
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(self._scanner_keys))) as pool:
             future_map = {}
             for key in self._scanner_keys:
                 fn = SCANNER_REGISTRY.get(key)

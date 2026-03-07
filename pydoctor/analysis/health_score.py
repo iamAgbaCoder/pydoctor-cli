@@ -7,9 +7,8 @@ Calculates the numerical project health score and verdict.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
-from pydoctor.core.report import DiagnosisReport, Issue
+from pydoctor.core.report import DiagnosisReport
 
 
 @dataclass
@@ -22,15 +21,13 @@ class HealthMetrics:
 def calculate_health(report: DiagnosisReport) -> HealthMetrics:
     """
     Calculate project health score (0-100) based on identified issues.
-
-    Weights:
-    - critical/security: -3
-    - error/conflict: -5
-    - warning (unused/outdated): -2
-    - info: 0
     """
-    score = 100
+    score = _compute_score(report)
+    return _get_verdict(score)
 
+
+def _compute_score(report: DiagnosisReport) -> int:
+    score = 100
     for issue in report.issues:
         if issue.severity in ("ok", "info"):
             continue
@@ -47,10 +44,10 @@ def calculate_health(report: DiagnosisReport) -> HealthMetrics:
                 score -= 5
             elif issue.severity == "warning":
                 score -= 2
+    return max(0, score)
 
-    # Floor to 0
-    score = max(0, score)
 
+def _get_verdict(score: int) -> HealthMetrics:
     if score >= 90:
         verdict = "Excellent"
         message = "Your project is healthy and ready for production."
@@ -59,11 +56,11 @@ def calculate_health(report: DiagnosisReport) -> HealthMetrics:
         message = "Your project is functional but has some minor issues to clear up."
     elif score >= 50:
         verdict = "Needs Attention"
-        message = (
-            "Your project has notable risks. Consider addressing warnings carefully."
-        )
+        message = "Your project has notable risks. Consider addressing warnings carefully."
     else:
         verdict = "Critical"
-        message = "Your project contains severe risks that should be fixed before production deployment."
+        message = (
+            "Your project contains severe risks that should be fixed before production deployment."
+        )
 
     return HealthMetrics(score=score, verdict=verdict, message=message)

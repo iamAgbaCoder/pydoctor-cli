@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
-from typing import Optional
 
 from pydoctor.config.settings import Severity
-
 
 # ──────────────────────────────────────────────────────────────
 # Issue — atomic diagnostic finding
@@ -47,7 +45,7 @@ class Issue:
     title: str
     description: str
     recommendation: str
-    package: Optional[str] = None
+    package: str | None = None
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -85,9 +83,7 @@ class DiagnosisReport:
 
     issues: list[Issue] = field(default_factory=list)
     scan_path: str = "."
-    scanned_at: str = field(
-        default_factory=lambda: datetime.datetime.utcnow().isoformat() + "Z"
-    )
+    scanned_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat() + "Z")
     scan_duration_ms: float = 0.0
     scanner_meta: dict = field(default_factory=dict)
 
@@ -104,9 +100,7 @@ class DiagnosisReport:
     @property
     def has_errors(self) -> bool:
         """True if any issue has severity ERROR or CRITICAL."""
-        return any(
-            i.severity in (Severity.ERROR, Severity.CRITICAL) for i in self.issues
-        )
+        return any(i.severity in (Severity.ERROR, Severity.CRITICAL) for i in self.issues)
 
     @property
     def has_warnings(self) -> bool:

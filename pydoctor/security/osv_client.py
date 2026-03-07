@@ -22,17 +22,15 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 import requests
 
 from pydoctor.cache.cache_manager import CacheManager
 from pydoctor.config.settings import (
     OSV_API_URL,
-    REQUEST_TIMEOUT,
     OSV_BATCH_SIZE,
+    REQUEST_TIMEOUT,
 )
-
 
 # ──────────────────────────────────────────────────────────────
 # Data model
@@ -95,7 +93,7 @@ class OSVClient:
 
     def __init__(
         self,
-        cache: Optional[CacheManager] = None,
+        cache: CacheManager | None = None,
         timeout: int = REQUEST_TIMEOUT,
     ) -> None:
         self._cache = cache or CacheManager()
@@ -183,20 +181,28 @@ class OSVClient:
             ]
         }
 
-        try:
-            response = self._session.post(
-                OSV_API_URL,
-                data=json.dumps(payload),
-                timeout=self._timeout,
-            )
-            response.raise_for_status()
-            results = response.json().get("results", [])
-        except (requests.RequestException, ValueError):
-            # Network error — return whatever we got from cache
-            return records
+        # Try with retries
+        retries = 3
+        results = []
+        for attempt in range(retries):
+            try:
+                response = self._session.post(
+                    OSV_API_URL,
+                    data=json.dumps(payload),
+                    timeout=self._timeout,
+                )
+                response.raise_for_status()
+                results = response.json().get("results", [])
+                break
+            except (requests.RequestException, ValueError):
+                if attempt == retries - 1:
+                    # Final attempt failed — return whatever we got from cache
+                    return records
+                # Simple exponential backoff: 1s, 2s, 4s...
+                time.sleep(2**attempt)
 
         # Parse results — one result entry per queried package (in order)
-        for (name, version), result in zip(to_fetch, results):
+        for (name, version), result in zip(to_fetch, results, strict=False):
             vulns = result.get("vulns", [])
             parsed = [self._parse_vuln(v, name, version) for v in vulns]
             records.extend(parsed)

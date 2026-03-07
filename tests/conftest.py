@@ -20,7 +20,6 @@ from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import DiagnosisReport, Issue
 from pydoctor.config.settings import Severity
 
-
 # ── Fixtures ───────────────────────────────────────────────────
 
 

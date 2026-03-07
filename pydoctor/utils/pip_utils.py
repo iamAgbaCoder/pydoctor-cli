@@ -13,10 +13,8 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 from pydoctor.utils.subprocess_utils import run_pip_command
-
 
 # ──────────────────────────────────────────────────────────────
 # Installed packages
@@ -130,7 +128,7 @@ def parse_requirements_file(req_path: Path) -> dict[str, str]:
 # ──────────────────────────────────────────────────────────────
 
 
-def get_pip_version() -> Optional[str]:
+def get_pip_version() -> str | None:
     """
     Return the version string of the currently active pip installation.
 
@@ -145,6 +143,111 @@ def get_pip_version() -> Optional[str]:
     if len(parts) >= 2:
         return parts[1]
     return None
+
+
+def update_requirements_file(req_path: Path, package: str, new_spec: str) -> bool:
+    """
+    Attempt to update a package version in requirements.txt.
+    Returns True if updated, False otherwise.
+    """
+    if not req_path.is_file():
+        return False
+
+    try:
+        lines = req_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+
+    new_lines = []
+    updated = False
+    norm_pkg = _normalise_name(package)
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "-r", "-c", "--")):
+            new_lines.append(line)
+            continue
+
+        m = _REQ_LINE_RE.match(stripped)
+        if m and _normalise_name(m.group("name")) == norm_pkg:
+            # We found the line. Construct new line.
+            comment = ""
+            if "#" in line:
+                comment = "  " + line[line.find("#") :]
+
+            new_lines.append(f"{package}{new_spec}{comment}")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if updated:
+        try:
+            req_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        except OSError:
+            return False
+
+    return updated
+
+
+def remove_from_requirements_file(req_path: Path, package: str) -> bool:
+    """
+    Attempt to remove a package from requirements.txt.
+    Returns True if removed, False otherwise.
+    """
+    if not req_path.is_file():
+        return False
+
+    try:
+        lines = req_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+
+    new_lines = []
+    updated = False
+    norm_pkg = _normalise_name(package)
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", "-r", "-c", "--")):
+            new_lines.append(line)
+            continue
+
+        m = _REQ_LINE_RE.match(stripped)
+        if m and _normalise_name(m.group("name")) == norm_pkg:
+            updated = True
+            # Skip it (removal)
+        else:
+            new_lines.append(line)
+
+    if updated:
+        try:
+            req_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        except OSError:
+            return False
+
+    return updated
+
+
+def get_dependency_graph() -> list[dict]:
+    """
+    Return the dependency tree for the current environment.
+    Uses ``pipdeptree --json-tree`` if available, otherwise returns [].
+    """
+    import subprocess
+
+    try:
+        # We try to run pipdeptree since it is a dependency of pydoctor
+        result = subprocess.run(
+            [sys.executable, "-m", "pipdeptree", "--json-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+    except (subprocess.SubprocessError, json.JSONDecodeError, ImportError):
+        pass
+    return []
 
 
 # ──────────────────────────────────────────────────────────────

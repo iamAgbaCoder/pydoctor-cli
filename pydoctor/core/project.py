@@ -12,13 +12,12 @@ independently.
 
 from __future__ import annotations
 
-import ast
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
-from pydoctor.config.settings import PYTHON_EXTENSION, IGNORED_DIRS
 from pydoctor.utils.file_utils import collect_python_files
 from pydoctor.utils.pip_utils import get_installed_packages, parse_requirements_file
 
@@ -52,49 +51,34 @@ class ProjectContext:
         )
     )
     in_virtualenv: bool = False
+    dependency_graph: list[dict] = field(default_factory=list)
+    platform_info: str = ""
+    os_name: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
+    is_poetry: bool = False
+    is_uv: bool = False
+    is_pdm: bool = False
 
     # ── Factory method ─────────────────────────────────────────
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "ProjectContext":
-        """
-        Build a ProjectContext by scanning ``path``.
-
-        This performs:
-        1. Python file discovery (respects IGNORED_DIRS)
-        2. Installed-packages enumeration via pip internals
-        3. requirements.txt / pyproject.toml parsing
-        4. Virtual-environment detection
-
-        Parameters
-        ----------
-        path: str | Path
-            The project directory to scan.
-
-        Returns
-        -------
-        ProjectContext
-        """
+    def from_path(cls, path: str | Path) -> ProjectContext:
+        """Build a ProjectContext by scanning ``path``."""
         root = Path(path).resolve()
-
-        # Discover all .py files under the project (skipping venv, dist, etc.)
         python_files = collect_python_files(root)
-
-        # Enumerate packages currently installed in the active Python env
         installed = get_installed_packages()
 
-        # Parse requirements.txt if it exists
-        declared: dict[str, str] = {}
-        req_file = root / "requirements.txt"
-        if req_file.is_file():
-            declared = parse_requirements_file(req_file)
+        declared = cls._parse_dependencies(root)
+        meta = cls._extract_pyproject_metadata(root)
 
-        # Detect virtual environment:
-        # sys.prefix != sys.base_prefix  →  in a venv
-        # Also check for VIRTUAL_ENV env var as a fallback
+        # Detect virtual environment
         import os
+        import platform
+
+        from pydoctor.utils.pip_utils import get_dependency_graph
 
         in_venv = (sys.prefix != sys.base_prefix) or bool(os.environ.get("VIRTUAL_ENV"))
+        graph = get_dependency_graph()
 
         return cls(
             root=root,
@@ -102,4 +86,78 @@ class ProjectContext:
             installed_packages=installed,
             declared_deps=declared,
             in_virtualenv=in_venv,
+            dependency_graph=graph,
+            platform_info=platform.platform(),
+            os_name=platform.system(),
+            config=meta.get("config", {}),
+            is_poetry=meta.get("is_poetry", False),
+            is_uv=meta.get("is_uv", False),
+            is_pdm=meta.get("is_pdm", False),
         )
+
+    @staticmethod
+    def _parse_dependencies(root: Path) -> dict[str, str]:
+        """Parse declared dependencies from various sources."""
+        declared: dict[str, str] = {}
+
+        # 1. Try requirements.txt
+        req_file = root / "requirements.txt"
+        if req_file.is_file():
+            declared.update(parse_requirements_file(req_file))
+
+        # 2. Try pyproject.toml
+        pyproject = root / "pyproject.toml"
+        if not pyproject.is_file():
+            return declared
+
+        try:
+            with pyproject.open("rb") as f:
+                if sys.version_info >= (3, 11):
+                    import tomllib
+
+                    data = tomllib.load(f)
+                else:
+                    import tomli
+
+                    data = tomli.load(f)
+
+            project_info = data.get("project", {})
+            for d in project_info.get("dependencies", []):
+                name_match = re.match(r"^([A-Za-z0-9_.\-]+)", d)
+                if name_match:
+                    declared[name_match.group(1).lower().replace("_", "-")] = d
+
+            for group in project_info.get("optional-dependencies", {}).values():
+                for d in group:
+                    name_match = re.match(r"^([A-Za-z0-9_.\-]+)", d)
+                    if name_match:
+                        declared[name_match.group(1).lower().replace("_", "-")] = d
+        except Exception:
+            pass
+        return declared
+
+    @staticmethod
+    def _extract_pyproject_metadata(root: Path) -> dict:
+        """Extract config and tool detection info from pyproject.toml."""
+        ret = {"config": {}, "is_poetry": False, "is_pdm": False, "is_uv": False}
+        pyproject = root / "pyproject.toml"
+        if not pyproject.is_file():
+            return ret
+
+        try:
+            with pyproject.open("rb") as f:
+                if sys.version_info >= (3, 11):
+                    import tomllib
+
+                    data = tomllib.load(f)
+                else:
+                    import tomli
+
+                    data = tomli.load(f)
+            ret["config"] = data.get("tool", {}).get("pydoctor", {})
+            ret["is_poetry"] = "poetry" in data.get("tool", {})
+            ret["is_pdm"] = "pdm" in data.get("tool", {})
+            ret["is_uv"] = "uv" in data.get("tool", {}) or (root / "uv.lock").exists()
+        except Exception:
+            pass
+        return ret

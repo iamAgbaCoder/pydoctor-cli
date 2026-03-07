@@ -7,24 +7,19 @@ Rich-powered terminal report formatter.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Any
 
 from rich.console import Console
-from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
-from rich.progress import Progress, BarColumn, TextColumn
-from rich import box
-from rich.rule import Rule
 
+from pydoctor.analysis.health_score import calculate_health
 from pydoctor.config.settings import Severity
 from pydoctor.core.report import DiagnosisReport, Issue
-from pydoctor.analysis.health_score import calculate_health
 from pydoctor.reports.terminal_colors import (
+    ICON_STETHOSCOPE,
     PYDOCTOR_THEME,
     severity_icon,
-    severity_style,
-    ICON_STETHOSCOPE,
 )
 
 console = Console(theme=PYDOCTOR_THEME)
@@ -49,9 +44,7 @@ def render_report(report: DiagnosisReport, verbose: bool = False) -> None:
 
     # Auto-expand details if we are in a targeted scan (only one category) or verbose
     categories = {
-        i.category
-        for i in report.issues
-        if i.severity not in (Severity.OK, Severity.INFO)
+        i.category for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)
     }
 
     if verbose or len(categories) == 1:
@@ -61,6 +54,15 @@ def render_report(report: DiagnosisReport, verbose: bool = False) -> None:
         if verbose or "unused" in categories:
             console.print()
             _render_detailed_unused(report)
+        if verbose or "outdated" in categories:
+            console.print()
+            _render_detailed_outdated(report)
+        if verbose or "environment" in categories:
+            console.print()
+            _render_detailed_environment(report)
+        if verbose or "dependencies" in categories:
+            console.print()
+            _render_detailed_dependencies(report)
 
     console.print()
     _render_health_score(report)
@@ -69,10 +71,10 @@ def render_report(report: DiagnosisReport, verbose: bool = False) -> None:
     _render_verdict(report)
 
     console.print()
-    _render_recommendations(report)
+    _render_recommendations(report, verbose=verbose)
 
     console.print()
-    _render_next_steps()
+    _render_next_steps(verbose=verbose)
 
     console.print(
         f"\n[dim_text]Scan completed in {report.scan_duration_ms / 1000.0:.2f} seconds[/]"
@@ -101,7 +103,7 @@ def _render_simple_summary(report: DiagnosisReport) -> None:
         problems = [i for i in issues if i.severity not in (Severity.OK, Severity.INFO)]
 
         if not problems:
-            text = Text(f"✔ Healthy", style="ok")
+            text = Text("✔ Healthy", style="ok")
         else:
             if key == "security":
                 text = Text(f"⚠ {len(problems)} vulnerabilities", style="warning")
@@ -141,7 +143,7 @@ def _render_verdict(report: DiagnosisReport) -> None:
     console.print(health.message)
 
 
-def _render_recommendations(report: DiagnosisReport) -> None:
+def _render_recommendations(report: DiagnosisReport, verbose: bool = False) -> None:
     console.print("[section]💡 Recommendations[/]")
     non_ok = [
         i
@@ -153,28 +155,30 @@ def _render_recommendations(report: DiagnosisReport) -> None:
         console.print("[ok]No actions required. Keep up the good work![/]")
         return
 
+    # In verbose mode, show ALL recommendations. In normal mode, limit to 10.
+    limit = 10 if not verbose else 1000
     shown = 0
-    for issue in non_ok[:10]:
+    for issue in non_ok[:limit]:
         console.print(
             f"{severity_icon(issue.severity)} [pkg]{issue.package or 'System'}[/] {issue.title}"
         )
         console.print(f"  Fix: [code]{issue.recommendation}[/]")
         shown += 1
 
-    if len(non_ok) > 10:
-        console.print(
-            f"\n[dim_text]... and {len(non_ok) - 10} more recommendations.[/]"
-        )
+    if not verbose and len(non_ok) > limit:
+        console.print(f"\n[dim_text]... and {len(non_ok) - limit} more recommendations.[/]")
 
 
-def _render_next_steps() -> None:
+def _render_next_steps(verbose: bool = False) -> None:
     console.print("[section]🚀 Next Steps[/]")
     table = Table(box=None, show_header=False, padding=(0, 2))
     table.add_column("Desc", style="dim_text")
     table.add_column("Cmd", style="code")
 
-    table.add_row("Run full diagnosis:", "pydoctor diagnose --verbose")
-    table.add_row("Check vulnerabilities:", "pydoctor scan-security")
+    if not verbose:
+        table.add_row("Run full diagnosis:", "pydoctor diagnose --verbose")
+        table.add_row("Check vulnerabilities:", "pydoctor scan-security")
+
     table.add_row("Auto-fix issues:", "pydoctor fix")
     console.print(table)
 
@@ -182,9 +186,7 @@ def _render_next_steps() -> None:
 def _render_detailed_security(report: DiagnosisReport) -> None:
     """Group vulnerabilities by package for verbose output."""
     sec_issues = [
-        i
-        for i in report.issues
-        if i.category == "security" and i.severity != Severity.OK
+        i for i in report.issues if i.category == "security" and i.severity != Severity.OK
     ]
     if not sec_issues:
         return
@@ -206,20 +208,14 @@ def _render_detailed_security(report: DiagnosisReport) -> None:
         for issue in issues:
             c = "error" if issue.severity == Severity.CRITICAL else "warning"
             display_title = issue.title
-            if issue.package and display_title.lower().startswith(
-                issue.package.lower()
-            ):
+            if issue.package and display_title.lower().startswith(issue.package.lower()):
                 display_title = display_title[len(issue.package) :].strip(" -—")
             console.print(f"  [{c}]{display_title}[/] - {issue.description}")
 
 
 def _render_detailed_outdated(report: DiagnosisReport) -> None:
     """Show details for outdated packages."""
-    outdated = [
-        i
-        for i in report.issues
-        if i.category == "outdated" and i.severity != Severity.OK
-    ]
+    outdated = [i for i in report.issues if i.category == "outdated" and i.severity != Severity.OK]
     if not outdated:
         return
 
@@ -240,9 +236,7 @@ def _render_detailed_outdated(report: DiagnosisReport) -> None:
 
 def _render_detailed_unused(report: DiagnosisReport) -> None:
     """Show detailed unused with confidence."""
-    unused = [
-        i for i in report.issues if i.category == "unused" and i.severity != Severity.OK
-    ]
+    unused = [i for i in report.issues if i.category == "unused" and i.severity != Severity.OK]
     if not unused:
         return
 
@@ -253,6 +247,38 @@ def _render_detailed_unused(report: DiagnosisReport) -> None:
         # Parse confidence from description if present
         desc = issue.description.replace("\n", "  ")
         console.print(f"  [dim_text]{desc}[/]")
+
+
+def _render_detailed_environment(report: DiagnosisReport) -> None:
+    """Show detailed environment issues."""
+    env_issues = [
+        i for i in report.issues if i.category == "environment" and i.severity != Severity.OK
+    ]
+    if not env_issues:
+        return
+    console.print(Rule("[section]Environment Details[/]", style="rule"))
+    for issue in env_issues:
+        console.print(f"\n{severity_icon(issue.severity)} [b]{issue.title}[/]")
+        console.print(f"  [dim_text]{issue.description}[/]")
+        if issue.recommendation:
+            console.print(f"  Fix: [code]{issue.recommendation}[/]")
+
+
+def _render_detailed_dependencies(report: DiagnosisReport) -> None:
+    """Show detailed dependency conflicts."""
+    dep_issues = [
+        i for i in report.issues if i.category == "dependencies" and i.severity != Severity.OK
+    ]
+    if not dep_issues:
+        return
+    console.print(Rule("[section]Dependency Conflicts[/]", style="rule"))
+    for issue in dep_issues:
+        console.print(
+            f"\n{severity_icon(issue.severity)} [pkg]{issue.package or 'Package'}[/] {issue.title}"
+        )
+        console.print(f"  [dim_text]{issue.description}[/]")
+        if issue.recommendation:
+            console.print(f"  Fix: [code]{issue.recommendation}[/]")
 
 
 def render_issue_detail(issue: Issue) -> None:

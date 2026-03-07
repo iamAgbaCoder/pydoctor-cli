@@ -3,20 +3,20 @@ pydoctor/config/__init__.py
 """
 
 from pydoctor.config.settings import (
-    PYDOCTOR_HOME,
     CACHE_FILE,
     CACHE_TTL_SECONDS,
-    OSV_API_URL,
-    OSV_SINGLE_URL,
-    PYPI_URL_TEMPLATE,
-    REQUEST_TIMEOUT,
-    MAX_WORKERS,
-    OSV_BATCH_SIZE,
-    MIN_PYTHON_VERSION,
-    RECOMMENDED_PYTHON_VERSION,
-    Severity,
-    PYTHON_EXTENSION,
     IGNORED_DIRS,
+    MAX_WORKERS,
+    MIN_PYTHON_VERSION,
+    OSV_API_URL,
+    OSV_BATCH_SIZE,
+    OSV_SINGLE_URL,
+    PYDOCTOR_HOME,
+    PYPI_URL_TEMPLATE,
+    PYTHON_EXTENSION,
+    RECOMMENDED_PYTHON_VERSION,
+    REQUEST_TIMEOUT,
+    Severity,
 )
 
 __all__ = [

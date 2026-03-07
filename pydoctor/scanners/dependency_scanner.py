@@ -21,13 +21,11 @@ re-implementing constraint satisfaction.
 from __future__ import annotations
 
 import re
-from typing import List
 
 from pydoctor.config.settings import Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
 from pydoctor.utils.subprocess_utils import run_pip_command
-
 
 CATEGORY = "dependencies"
 
@@ -52,7 +50,7 @@ _MISSING_PAT = re.compile(
 )
 
 
-def scan(ctx: ProjectContext) -> List[Issue]:
+def scan(ctx: ProjectContext) -> list[Issue]:
     """
     Run dependency conflict detection and return issues.
 
@@ -64,7 +62,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
     -------
     list[Issue]
     """
-    issues: List[Issue] = []
+    issues: list[Issue] = []
 
     pip_check_issues = _run_pip_check()
     issues.extend(pip_check_issues)
@@ -90,7 +88,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
 # ──────────────────────────────────────────────────────────────
 
 
-def _run_pip_check() -> List[Issue]:
+def _run_pip_check() -> list[Issue]:
     """
     Invoke ``pip check`` and parse its output into Issue objects.
 
@@ -98,7 +96,7 @@ def _run_pip_check() -> List[Issue]:
     non-zero when conflicts exist.  We capture its stdout regardless of
     exit code and parse line-by-line.
     """
-    issues: List[Issue] = []
+    issues: list[Issue] = []
     result = run_pip_command(["check"])
 
     output = (result.stdout or "").strip()
@@ -167,8 +165,7 @@ def _make_conflict_issue(pkg: str, ver: str, req: str, installed: str) -> Issue:
             f"which is incompatible."
         ),
         recommendation=(
-            f"Resolve the conflict by upgrading or pinning packages: "
-            f'`pip install "{req}"`'
+            f"Resolve the conflict by upgrading or pinning packages: " f'`pip install "{req}"`'
         ),
         package=pkg.lower(),
         extra={

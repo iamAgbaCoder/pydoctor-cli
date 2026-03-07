@@ -1,0 +1,104 @@
+name: PyDoctor CLI - CI/CD
+
+on:
+  push:
+    branches: [main, release]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, release]
+
+# Grant permissions for the publisher
+permissions:
+  contents: read
+  id-token: write # Required for OIDC / Trusted Publishing
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }}) on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint and Format Check
+        run: |
+          ruff check pydoctor
+          black --check pydoctor tests
+
+      - name: Type Check (Mypy)
+        run: mypy pydoctor
+
+      - name: Run Tests (Pytest)
+        run: pytest --cov=pydoctor --cov-report=xml
+
+      - name: PyDoctor Self-Diagnosis
+        # We run pydoctor on itself to ensure it's healthy
+        run: python -m pydoctor.cli.main diagnose
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  deploy-testpypi:
+    name: Deploy to TestPyPI
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/pydoctor-cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build Package
+        run: |
+          pip install build
+          python -m build
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+  deploy-pypi:
+    name: Deploy to Production PyPI
+    needs: test
+    # Run only on pushes to release branch or new semantic tags
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://pypi.org/p/pydoctor-cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build Package
+        run: |
+          pip install build
+          python -m build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
