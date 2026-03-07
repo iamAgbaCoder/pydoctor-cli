@@ -52,6 +52,7 @@ from pydoctor import __version__
 from pydoctor.cache.cache_manager import CacheManager
 from pydoctor.config.settings import Severity
 from pydoctor.core.analyzer import Analyzer
+from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import DiagnosisReport
 from pydoctor.reports.json_formatter import render_json
 from pydoctor.reports.table_formatter import (
@@ -61,6 +62,10 @@ from pydoctor.reports.table_formatter import (
     render_report,
 )
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
+from pydoctor.utils.pip_utils import (
+    remove_from_requirements_file,
+    update_requirements_file,
+)
 
 
 def version_callback(value: bool):
@@ -403,17 +408,22 @@ def fix(
     )
 
     report_data = _run_scan(path=path)
+    ctx = ProjectContext.from_path(path)
+
     if packages:
         _filter_issues_by_targets(report_data, packages)
 
     actions = 0
-    actions += _fix_vulnerabilities(report_data, path, safe)
+    actions += _fix_vulnerabilities(report_data, ctx, safe)
 
     if upgrade:
-        actions += _fix_outdated(report_data, path, safe)
+        actions += _fix_outdated(report_data, ctx, safe)
+
+    # Resolve dependency conflicts (missing packages, etc.)
+    actions += _fix_dependencies(report_data, ctx, safe)
 
     if remove or packages:
-        actions += _fix_unused(report_data, path, safe)
+        actions += _fix_unused(report_data, ctx, safe)
 
     actions += _fix_venv(report_data, path, safe)
 
@@ -434,8 +444,92 @@ def _filter_issues_by_targets(
         raise typer.Exit()
 
 
-def _fix_vulnerabilities(report: DiagnosisReport, path: str, safe: bool) -> int:
-    vulnerable = [i for i in report.issues if i.category == "security"]
+def _run_package_manager_command(
+    ctx: ProjectContext, pkg: str, action: str, upgrade: bool = False
+) -> subprocess.CompletedProcess:
+    """Run the appropriate command for the detected package manager."""
+    path = str(ctx.root)
+    if ctx.is_poetry:
+        cmd = ["poetry", "add", pkg] if action == "add" else ["poetry", "remove", pkg]
+        if action == "update":
+            cmd = ["poetry", "update", pkg]
+        console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
+        return subprocess.run(cmd, cwd=path)
+    if ctx.is_uv:
+        cmd = ["uv", "add", pkg] if action == "add" else ["uv", "remove", pkg]
+        if upgrade:
+            cmd = ["uv", "add", "--upgrade", pkg]
+        console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
+        return subprocess.run(cmd, cwd=path)
+    if ctx.is_pdm:
+        cmd = ["pdm", "add", pkg] if action == "add" else ["pdm", "remove", pkg]
+        if action == "update":
+            cmd = ["pdm", "update", pkg]
+        console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
+        return subprocess.run(cmd, cwd=path)
+
+    if action == "remove":
+        cmd = [sys.executable, "-m", "pip", "uninstall", "-y", pkg]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install", pkg]
+        if upgrade:
+            cmd.insert(-1, "--upgrade")
+    console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
+    return subprocess.run(cmd)
+
+
+def _add_package_to_requirements(req_file: Path, pkg: str, safe: bool) -> None:
+    """Helper to add a package to requirements.txt with version pinning."""
+    if not safe or Confirm.ask(f"  Add [pkg]{pkg}[/] to [code]requirements.txt[/]?"):
+        try:
+            content = req_file.read_text(encoding="utf-8")
+            from pydoctor.utils.pip_utils import get_installed_packages
+
+            installed = get_installed_packages()
+            search_key = pkg.lower().replace("_", "-").replace(".", "-")
+            version = installed.get(search_key)
+            entry = f"{pkg}=={version}" if version else pkg
+
+            if pkg.lower() not in content.lower():
+                with open(req_file, "a", encoding="utf-8") as f:
+                    f.write(f"\n{entry}")
+                console.print(f"  [ok]✔  {entry} added to requirements.txt[/]")
+            else:
+                console.print(f"  [dim_text]ℹ  {pkg} is already in requirements.txt[/]")
+        except Exception:
+            err_console.print("[error]✖  Failed to update requirements.txt[/]")
+
+
+def _update_pip_requirements(
+    ctx: ProjectContext, pkg: str, safe: bool, action: str, version_spec: str = ""
+) -> None:
+    """Update requirements.txt if using pip."""
+    if ctx.is_poetry or ctx.is_uv or ctx.is_pdm:
+        return
+
+    path = str(ctx.root)
+    req_file = Path(path) / "requirements.txt"
+    if not req_file.is_file():
+        return
+
+    if action == "remove":
+        if not safe or Confirm.ask(
+            f"  Remove [pkg]{pkg}[/] from [code]requirements.txt[/]?"
+        ):
+            remove_from_requirements_file(req_file, pkg)
+    elif action == "update":
+        if not safe or Confirm.ask(
+            f"  Update [code]requirements.txt[/] for [pkg]{pkg}[/]?"
+        ):
+            update_requirements_file(req_file, pkg, version_spec)
+    elif action == "add":
+        _add_package_to_requirements(req_file, pkg, safe)
+
+
+def _fix_vulnerabilities(
+    report: DiagnosisReport, ctx: ProjectContext, safe: bool
+) -> int:
+    vulnerable = [i for i in report.issues if i.code == "SEC_VULNERABILITY"]
     if not vulnerable:
         return 0
 
@@ -446,14 +540,12 @@ def _fix_vulnerabilities(report: DiagnosisReport, path: str, safe: bool) -> int:
     actions = 0
 
     for pkg in vulnerable_pkgs:
-        if safe:
-            if not Confirm.ask(f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?"):
-                continue
+        if safe and not Confirm.ask(
+            f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?"
+        ):
+            continue
 
-        console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", pkg]
-        )
+        result = _run_package_manager_command(ctx, pkg, "add", upgrade=True)
         if result.returncode == 0:
             console.print(f"  [ok]✔  {pkg} upgraded successfully.[/]")
             actions += 1
@@ -462,7 +554,7 @@ def _fix_vulnerabilities(report: DiagnosisReport, path: str, safe: bool) -> int:
     return actions
 
 
-def _fix_outdated(report: DiagnosisReport, path: str, safe: bool) -> int:
+def _fix_outdated(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
     outdated = [i for i in report.issues if i.code == "PKG_OUTDATED"]
     if not outdated:
         return 0
@@ -471,52 +563,81 @@ def _fix_outdated(report: DiagnosisReport, path: str, safe: bool) -> int:
         f"\n[section]Found {len(outdated)} outdated package(s) to upgrade:[/]"
     )
     actions = 0
+
     for issue in outdated:
         pkg = issue.package or issue.extra.get("name", "")
         if not pkg:
             continue
         latest = issue.extra.get("latest_version", "latest")
-        if safe:
-            if not Confirm.ask(f"  Upgrade [pkg]{pkg}[/] → {latest}?"):
-                continue
+        if safe and not Confirm.ask(f"  Upgrade [pkg]{pkg}[/] → {latest}?"):
+            continue
 
-        console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
-        result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", pkg]
-        )
+        result = _run_package_manager_command(ctx, pkg, "update", upgrade=True)
         if result.returncode == 0:
             console.print(f"  [ok]✔  {pkg} upgraded to {latest}[/]")
             actions += 1
-            from pydoctor.utils.pip_utils import update_requirements_file
-
-            req_file = Path(path) / "requirements.txt"
-            if req_file.is_file():
-                update_requirements_file(req_file, pkg, f"=={latest}")
+            _update_pip_requirements(ctx, pkg, safe, "update", f"=={latest}")
         else:
             err_console.print(f"  [error]✖  Failed to upgrade {pkg}[/]")
     return actions
 
 
-def _fix_unused(report: DiagnosisReport, path: str, safe: bool) -> int:
+def _fix_dependencies(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
+    conflicts = [
+        i
+        for i in report.issues
+        if i.category == "dependencies"
+        and i.code in ("DEP_MISSING", "DEP_VERSION_CONFLICT")
+    ]
+    if not conflicts:
+        return 0
+
+    unique_targets = {}
+    for issue in conflicts:
+        target = issue.extra.get("missing_package") or issue.extra.get("required_spec")
+        if target:
+            unique_targets[target] = issue.title
+
+    console.print(
+        f"\n[section]Found {len(unique_targets)} unique dependency conflict(s) to resolve:[/]"
+    )
+    actions = 0
+
+    for target, title in unique_targets.items():
+        if safe and not Confirm.ask(f"  Resolve: [pkg]{title}[/]?"):
+            continue
+
+        result = _run_package_manager_command(ctx, target, "add")
+        if result.returncode == 0:
+            console.print(f"  [ok]✔  {target} resolved successfully.[/]")
+            actions += 1
+            _update_pip_requirements(ctx, target, safe, "add")
+        else:
+            err_console.print(f"  [error]✖  Failed to resolve {target}[/]")
+
+    return actions
+
+
+def _fix_unused(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
     unused = [i for i in report.issues if i.code == "UNUSED_PACKAGE"]
     if not unused:
         return 0
 
     console.print(f"\n[section]Found {len(unused)} possibly unused package(s):[/]")
     actions = 0
+
     for issue in unused:
         pkg = issue.package or ""
         if not pkg:
             continue
-        if safe:
-            if not Confirm.ask(f"  Remove [pkg]{pkg}[/]?"):
-                continue
+        if safe and not Confirm.ask(f"  Remove [pkg]{pkg}[/]?"):
+            continue
 
-        console.print(f"  [dim_text]Running: pip uninstall -y {pkg}[/]")
-        result = subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", pkg])
+        result = _run_package_manager_command(ctx, pkg, "remove")
         if result.returncode == 0:
             console.print(f"  [ok]✔  {pkg} removed.[/]")
             actions += 1
+            _update_pip_requirements(ctx, pkg, safe, "remove")
         else:
             err_console.print(f"  [error]✖  Failed to remove {pkg}[/]")
     return actions

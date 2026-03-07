@@ -39,7 +39,7 @@ jobs:
       - name: Lint and Format Check
         run: |
           ruff check pydoctor
-          # black --check pydoctor tests
+          black --check pydoctor tests
 
       - name: Type Check (Mypy)
         run: mypy pydoctor

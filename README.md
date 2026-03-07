@@ -18,7 +18,8 @@
 - **Beautiful CLI UI**: Powered by [Rich](https://github.com/Textualize/rich) (Icons, Progress Spinners, Color-coded severities).
 - **Speed**: Executes I/O-bound operations across concurrent thread pools.
 - **JSON Reporting**: Full structured output support via `--json` for CI/CD pipelines.
-- **Automated Remediation**: Run `pydoctor fix` to automatically perform upgrades, remove unused packages, and initialize virtual environments.
+- **Automated Remediation**: Run `pydoctor fix` to automatically perform upgrades, remove unused packages, resolve dependency conflicts, and initialize virtual environments.
+- **Package Manager Support**: Works with standard `pip` (`requirements.txt`), **Poetry**, **uv**, and **pdm**. It intelligently chooses the right tool to apply fixes.
 
 ---
 

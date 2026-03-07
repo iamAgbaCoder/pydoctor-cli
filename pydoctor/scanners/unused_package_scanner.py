@@ -116,6 +116,27 @@ def _get_imported_packages(ctx: ProjectContext) -> set[str]:
 def _get_implicitly_used_packages(ctx: ProjectContext, imported: set[str]) -> set[str]:
     used = set()
 
+    # We also consider dependencies of "ignored" packages as used
+    # (e.g., if black is ignored, its dependencies like pathspec are also "used")
+    ignored_base = {
+        "black",
+        "pytest",
+        "flake8",
+        "mypy",
+        "tox",
+        "isort",
+        "pydoctor",
+        "rich",
+        "pydoctor-cli",
+        "setuptools",
+        "wheel",
+        "pipdeptree",
+    }
+    if "ignored_packages" in ctx.config:
+        ignored_base.update(p.lower().replace("_", "-") for p in ctx.config["ignored_packages"])
+
+    search_roots = imported | ignored_base
+
     def mark(node: dict):
         for dep in node.get("dependencies", []):
             dname = dep.get("package_name", "").lower().replace("_", "-")
@@ -126,7 +147,7 @@ def _get_implicitly_used_packages(ctx: ProjectContext, imported: set[str]) -> se
     def search(nodes: list[dict]):
         for node in nodes:
             name = node.get("package_name", "").lower().replace("_", "-")
-            if name in imported:
+            if name in search_roots:
                 mark(node)
             search(node.get("dependencies", []))
 
@@ -134,9 +155,7 @@ def _get_implicitly_used_packages(ctx: ProjectContext, imported: set[str]) -> se
     return used
 
 
-def _identify_unused(
-    ctx: ProjectContext, imported: set[str], implicit: set[str]
-) -> list[str]:
+def _identify_unused(ctx: ProjectContext, imported: set[str], implicit: set[str]) -> list[str]:
     ignored = {
         "black",
         "pytest",
@@ -149,11 +168,11 @@ def _identify_unused(
         "pydoctor-cli",
         "setuptools",
         "wheel",
+        "ruff",
+        "build",
     }
     if "ignored_packages" in ctx.config:
-        ignored.update(
-            p.lower().replace("_", "-") for p in ctx.config["ignored_packages"]
-        )
+        ignored.update(p.lower().replace("_", "-") for p in ctx.config["ignored_packages"])
 
     unused = []
     for dep in ctx.declared_deps:

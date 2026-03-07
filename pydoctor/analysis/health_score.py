@@ -56,11 +56,11 @@ def _get_verdict(score: int) -> HealthMetrics:
         message = "Your project is functional but has some minor issues to clear up."
     elif score >= 50:
         verdict = "Needs Attention"
-        message = (
-            "Your project has notable risks. Consider addressing warnings carefully."
-        )
+        message = "Your project has notable risks. Consider addressing warnings carefully."
     else:
         verdict = "Critical"
-        message = "Your project contains severe risks that should be fixed before production deployment."
+        message = (
+            "Your project contains severe risks that should be fixed before production deployment."
+        )
 
     return HealthMetrics(score=score, verdict=verdict, message=message)

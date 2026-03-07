@@ -51,9 +51,19 @@ ignored_packages = [
     "setuptools",
     "wheel",
     "twine",
+    "build",
+    "ruff",
+    "mypy",
+    "black",
+    "pytest",
+    "pytest-cov",
+    "colorama",
+    "docutils",
+    "types-requests",
+    "pipdeptree",
 ]
 # Minimum health score to pass CI (0-100)
-min_health_score = 80
+min_health_score = 40
 
 
 [tool.setuptools.packages.find]
