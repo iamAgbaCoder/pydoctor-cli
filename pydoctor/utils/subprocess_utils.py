@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import Optional
 
 
 def run_command(
@@ -24,7 +23,7 @@ def run_command(
     timeout: int = 30,
     capture_output: bool = True,
     text: bool = True,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     raise_on_error: bool = False,
 ) -> subprocess.CompletedProcess:
     """

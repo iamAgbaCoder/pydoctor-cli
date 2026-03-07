@@ -14,13 +14,11 @@ Checks the state of the Python environment for issues such as:
 from __future__ import annotations
 
 import platform
-import sys
-from typing import List
 
 from pydoctor.config.settings import (
-    Severity,
     MIN_PYTHON_VERSION,
     RECOMMENDED_PYTHON_VERSION,
+    Severity,
 )
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
@@ -30,7 +28,7 @@ from pydoctor.utils.pip_utils import get_pip_version
 CATEGORY = "environment"
 
 
-def scan(ctx: ProjectContext) -> List[Issue]:
+def scan(ctx: ProjectContext) -> list[Issue]:
     """
     Run all environment checks and return discovered issues.
 
@@ -42,7 +40,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
     -------
     list[Issue]
     """
-    issues: List[Issue] = []
+    issues: list[Issue] = []
 
     issues.extend(_check_python_version(ctx))
     issues.extend(_check_virtual_environment(ctx))
@@ -57,9 +55,9 @@ def scan(ctx: ProjectContext) -> List[Issue]:
 # ──────────────────────────────────────────────────────────────
 
 
-def _check_python_version(ctx: ProjectContext) -> List[Issue]:
+def _check_python_version(ctx: ProjectContext) -> list[Issue]:
     """Verify that the Python version meets minimum and recommended thresholds."""
-    issues: List[Issue] = []
+    issues: list[Issue] = []
     major, minor, micro = ctx.python_version
     ver_str = f"{major}.{minor}.{micro}"
 
@@ -117,7 +115,7 @@ def _check_python_version(ctx: ProjectContext) -> List[Issue]:
     return issues
 
 
-def _check_virtual_environment(ctx: ProjectContext) -> List[Issue]:
+def _check_virtual_environment(ctx: ProjectContext) -> list[Issue]:
     """Warn when running outside a virtual environment."""
     if ctx.in_virtualenv:
         return [
@@ -150,7 +148,7 @@ def _check_virtual_environment(ctx: ProjectContext) -> List[Issue]:
         ]
 
 
-def _check_pip_version() -> List[Issue]:
+def _check_pip_version() -> list[Issue]:
     """Check that pip is installed and not critically outdated."""
     pip_ver = get_pip_version()
 
@@ -199,7 +197,7 @@ def _check_pip_version() -> List[Issue]:
     ]
 
 
-def _check_platform(ctx: ProjectContext) -> List[Issue]:
+def _check_platform(ctx: ProjectContext) -> list[Issue]:
     """Emit an informational note about the current OS and architecture."""
     os_name = ctx.os_name  # e.g. "Windows", "Linux", "Darwin"
     arch = platform.machine()  # e.g. "AMD64", "x86_64"

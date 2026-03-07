@@ -12,9 +12,7 @@ recommendation to upgrade.
 
 from __future__ import annotations
 
-from typing import List
-
-from packaging.version import Version, InvalidVersion
+from packaging.version import InvalidVersion, Version
 
 from pydoctor.config.settings import Severity
 from pydoctor.core.project import ProjectContext
@@ -24,7 +22,7 @@ from pydoctor.utils.pip_utils import get_outdated_packages
 CATEGORY = "outdated"
 
 
-def scan(ctx: ProjectContext) -> List[Issue]:
+def scan(ctx: ProjectContext) -> list[Issue]:
     """
     Detect outdated packages in the active environment.
 
@@ -36,7 +34,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
     -------
     list[Issue]
     """
-    issues: List[Issue] = []
+    issues: list[Issue] = []
     outdated = get_outdated_packages()
 
     if not outdated:

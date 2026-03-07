@@ -7,24 +7,19 @@ Rich-powered terminal report formatter.
 from __future__ import annotations
 
 import math
-from typing import Dict, List, Any
 
 from rich.console import Console
-from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
-from rich.progress import Progress, BarColumn, TextColumn
-from rich import box
-from rich.rule import Rule
 
+from pydoctor.analysis.health_score import calculate_health
 from pydoctor.config.settings import Severity
 from pydoctor.core.report import DiagnosisReport, Issue
-from pydoctor.analysis.health_score import calculate_health
 from pydoctor.reports.terminal_colors import (
+    ICON_STETHOSCOPE,
     PYDOCTOR_THEME,
     severity_icon,
-    severity_style,
-    ICON_STETHOSCOPE,
 )
 
 console = Console(theme=PYDOCTOR_THEME)
@@ -108,7 +103,7 @@ def _render_simple_summary(report: DiagnosisReport) -> None:
         problems = [i for i in issues if i.severity not in (Severity.OK, Severity.INFO)]
 
         if not problems:
-            text = Text(f"✔ Healthy", style="ok")
+            text = Text("✔ Healthy", style="ok")
         else:
             if key == "security":
                 text = Text(f"⚠ {len(problems)} vulnerabilities", style="warning")

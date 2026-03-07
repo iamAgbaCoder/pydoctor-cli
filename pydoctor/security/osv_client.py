@@ -22,15 +22,14 @@ import hashlib
 import json
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 import requests
 
 from pydoctor.cache.cache_manager import CacheManager
 from pydoctor.config.settings import (
     OSV_API_URL,
-    REQUEST_TIMEOUT,
     OSV_BATCH_SIZE,
+    REQUEST_TIMEOUT,
 )
 
 # ──────────────────────────────────────────────────────────────
@@ -94,7 +93,7 @@ class OSVClient:
 
     def __init__(
         self,
-        cache: Optional[CacheManager] = None,
+        cache: CacheManager | None = None,
         timeout: int = REQUEST_TIMEOUT,
     ) -> None:
         self._cache = cache or CacheManager()
@@ -203,7 +202,7 @@ class OSVClient:
                 time.sleep(2**attempt)
 
         # Parse results — one result entry per queried package (in order)
-        for (name, version), result in zip(to_fetch, results):
+        for (name, version), result in zip(to_fetch, results, strict=False):
             vulns = result.get("vulns", [])
             parsed = [self._parse_vuln(v, name, version) for v in vulns]
             records.extend(parsed)

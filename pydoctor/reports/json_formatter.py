@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import IO, Optional
+from typing import IO
 
 from pydoctor.core.report import DiagnosisReport
 

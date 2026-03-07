@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
-from typing import Optional
 
 from pydoctor.config.settings import Severity
 
@@ -46,7 +45,7 @@ class Issue:
     title: str
     description: str
     recommendation: str
-    package: Optional[str] = None
+    package: str | None = None
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:

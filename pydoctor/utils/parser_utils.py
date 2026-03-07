@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Optional
 
 from pydoctor.utils.file_utils import read_file_safe
 

@@ -24,7 +24,9 @@ Global flags
 
 from __future__ import annotations
 
+import subprocess
 import sys
+from typing import Annotated
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     try:
@@ -34,32 +36,30 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         pass
 
 from pathlib import Path
-from typing import Optional, List
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.progress import (
     Progress,
     SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
-    BarColumn,
 )
-from rich.panel import Panel
 from rich.prompt import Confirm
 
 from pydoctor import __version__
-from pydoctor.core.analyzer import Analyzer, SCANNER_REGISTRY
-from pydoctor.core.report import DiagnosisReport
-from pydoctor.reports.table_formatter import (
-    render_report,
-    render_issue_detail,
-    console,
-    CATEGORY_LABELS,
-)
-from pydoctor.reports.json_formatter import render_json
 from pydoctor.cache.cache_manager import CacheManager
-from pydoctor.config.settings import Severity, PYDOCTOR_HOME
+from pydoctor.config.settings import Severity
+from pydoctor.core.analyzer import Analyzer
+from pydoctor.core.report import DiagnosisReport
+from pydoctor.reports.json_formatter import render_json
+from pydoctor.reports.table_formatter import (
+    CATEGORY_LABELS,
+    console,
+    render_issue_detail,
+    render_report,
+)
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
 
 
@@ -111,7 +111,7 @@ app = typer.Typer(
 
 @app.callback()
 def main_callback(
-    version: Optional[bool] = typer.Option(
+    version: bool | None = typer.Option(
         None,
         "--version",
         callback=version_callback,
@@ -134,8 +134,12 @@ err_console = Console(stderr=True, theme=PYDOCTOR_THEME)
 
 _PATH_OPT = typer.Option(".", "--path", "-p", help="Project directory to scan.")
 _JSON_FLAG = typer.Option(False, "--json", "-j", help="Output results as JSON.")
-_VERBOSE_FLAG = typer.Option(False, "--verbose", "-v", help="Show detailed output and timing.")
-_NO_CACHE = typer.Option(False, "--no-cache", help="Bypass the local vulnerability cache.")
+_VERBOSE_FLAG = typer.Option(
+    False, "--verbose", "-v", help="Show detailed output and timing."
+)
+_NO_CACHE = typer.Option(
+    False, "--no-cache", help="Bypass the local vulnerability cache."
+)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -174,7 +178,7 @@ def _run_scan(
         console=console,
         transient=True,
     ) as progress:
-        task = progress.add_task("🩺 PyDoctor scanning project...", total=None)
+        progress.add_task("🩺 PyDoctor scanning project...", total=None)
         analyzer = Analyzer(
             project_path=path,
             scanners=scanners,
@@ -250,7 +254,9 @@ def check_env(
     """
     🌍  Check the Python **environment** (version, venv, pip).
     """
-    report = _run_scan(scanners=["environment"], path=path, verbose=verbose, as_json=json)
+    report = _run_scan(
+        scanners=["environment"], path=path, verbose=verbose, as_json=json
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report))
 
@@ -269,7 +275,9 @@ def scan_deps(
     """
     📦  Scan for **dependency conflicts** and missing packages.
     """
-    report = _run_scan(scanners=["dependencies"], path=path, verbose=verbose, as_json=json)
+    report = _run_scan(
+        scanners=["dependencies"], path=path, verbose=verbose, as_json=json
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report))
 
@@ -346,32 +354,25 @@ def report(
 
 @app.command()
 def fix(
-    packages: Optional[List[str]] = typer.Argument(
-        None, help="Specific packages to fix (optional)."
-    ),
+    packages: Annotated[
+        list[str] | None, typer.Argument(help="Specific packages to fix (optional).")
+    ] = None,
     path: str = _PATH_OPT,
     safe: bool = typer.Option(
         True,
         "--safe/--no-safe",
         help="Safe mode asks for confirmation before each action (default: on).",
     ),
-    upgrade: bool = typer.Option(True, "--upgrade/--no-upgrade", help="Upgrade outdated packages."),
-    remove: bool = typer.Option(False, "--remove/--no-remove", help="Remove unused packages."),
+    upgrade: bool = typer.Option(
+        True, "--upgrade/--no-upgrade", help="Upgrade outdated packages."
+    ),
+    remove: bool = typer.Option(
+        False, "--remove/--no-remove", help="Remove unused packages."
+    ),
 ) -> None:
     """
     🔧  Apply **automated fixes** to common issues.
-
-    By default, runs in safe mode — asking before each action.
-    Use --no-safe to apply all fixes non-interactively.
-
-    Examples\n
-    ────────\n
-    pydoctor fix\n
-    pydoctor fix --no-safe\n
-    pydoctor fix --remove\n
     """
-    import subprocess
-
     console.print()
     console.print(
         Panel(
@@ -381,170 +382,156 @@ def fix(
     )
 
     report_data = _run_scan(path=path)
-    actions_taken = 0
-
-    # Filter issues if specific packages were provided
     if packages:
-        # Normalize package names for matching
-        targets = {p.lower() for p in packages}
-        report_data.issues = [
-            i for i in report_data.issues if i.package and i.package.lower() in targets
-        ]
-        if not report_data.issues:
-            console.print(
-                f"\n[warning]No fixable issues found for packages: {', '.join(packages)}[/]"
-            )
-            raise typer.Exit()
+        _filter_issues_by_targets(report_data, packages)
 
-    # ── Upgrade vulnerable packages ────────────────────────────
-    vulnerable = [i for i in report_data.issues if i.category == "security"]
-    if vulnerable:
-        console.print(f"\n[section]Found {len(vulnerable)} security vulnerabilities to fix:[/]")
-        # Group by package to avoid multiple upgrades for same package
-        vulnerable_pkgs = {}
-        for i in vulnerable:
-            if i.package:
-                vulnerable_pkgs[i.package] = i
+    actions = 0
+    actions += _fix_vulnerabilities(report_data, path, safe)
 
-        for pkg, issue in vulnerable_pkgs.items():
-            if safe:
-                ok = Confirm.ask(f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?")
-                if not ok:
-                    continue
-
-            console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", pkg],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                console.print(f"  [ok]✔  {pkg} upgraded successfully.[/]")
-                actions_taken += 1
-
-                # Also try to update requirements.txt if it exists
-                from pydoctor.utils.pip_utils import update_requirements_file
-
-                req_file = Path(path) / "requirements.txt"
-                if req_file.is_file():
-                    # We don't have the exact version here easily, but we can assume latest was installed
-                    # Actually, we should probably pass the target version if we knew it.
-                    # For now just confirming success.
-                    pass
-            else:
-                err_console.print(f"  [error]✖  Failed to fix {pkg}[/]")
-
-    # ── Upgrade outdated packages ──────────────────────────────
     if upgrade:
-        outdated = [i for i in report_data.issues if i.code == "PKG_OUTDATED"]
-        if outdated:
-            console.print(f"\n[section]Found {len(outdated)} outdated package(s) to upgrade:[/]")
-            for issue in outdated:
-                pkg = issue.package or issue.extra.get("name", "")
-                if not pkg:
-                    continue
-                # Skip if already handled in vulnerability upgrade
-                if pkg in vulnerable:
-                    continue
+        actions += _fix_outdated(report_data, path, safe)
 
-                latest = issue.extra.get("latest_version", "latest")
+    if remove or packages:
+        actions += _fix_unused(report_data, path, safe)
 
-                if safe:
-                    ok = Confirm.ask(f"  Upgrade [pkg]{pkg}[/] → {latest}?")
-                    if not ok:
-                        continue
+    actions += _fix_venv(report_data, path, safe)
 
-                console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
-                result = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--upgrade", pkg],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    console.print(f"  [ok]✔  {pkg} upgraded to {latest}[/]")
-                    actions_taken += 1
+    _render_fix_summary(actions)
 
-                    # Also try to update requirements.txt if it exists
-                    from pydoctor.utils.pip_utils import update_requirements_file
 
-                    req_file = Path(path) / "requirements.txt"
-                    if req_file.is_file():
-                        if update_requirements_file(req_file, pkg, f"=={latest}"):
-                            console.print(f"  [ok]✔  Updated {req_file.name}[/]")
-                else:
-                    err_console.print(f"  [error]✖  Failed to upgrade {pkg}[/]")
+def _filter_issues_by_targets(
+    report_data: DiagnosisReport, packages: list[str]
+) -> None:
+    targets = {p.lower() for p in packages}
+    report_data.issues = [
+        i for i in report_data.issues if i.package and i.package.lower() in targets
+    ]
+    if not report_data.issues:
+        console.print(
+            f"\n[warning]No fixable issues found for packages: {', '.join(packages)}[/]"
+        )
+        raise typer.Exit()
+
+
+def _fix_vulnerabilities(report: DiagnosisReport, path: str, safe: bool) -> int:
+    vulnerable = [i for i in report.issues if i.category == "security"]
+    if not vulnerable:
+        return 0
+
+    console.print(
+        f"\n[section]Found {len(vulnerable)} security vulnerabilities to fix:[/]"
+    )
+    vulnerable_pkgs = {i.package: i for i in vulnerable if i.package}
+    actions = 0
+
+    for pkg in vulnerable_pkgs:
+        if safe:
+            if not Confirm.ask(f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?"):
+                continue
+
+        console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", pkg]
+        )
+        if result.returncode == 0:
+            console.print(f"  [ok]✔  {pkg} upgraded successfully.[/]")
+            actions += 1
         else:
-            if not packages:  # Only show "No outdated" if we aren't targeting specific pkgs
-                console.print("[ok]✔  No outdated packages to upgrade.[/]")
+            err_console.print(f"  [error]✖  Failed to fix {pkg}[/]")
+    return actions
 
-    # ── Remove unused packages ─────────────────────────────────
-    if remove or packages:  # If specific packages are targeted, we try to remove if they are unused
-        unused = [i for i in report_data.issues if i.code == "UNUSED_PACKAGE"]
-        if unused:
-            console.print(f"\n[section]Found {len(unused)} possibly unused package(s):[/]")
-            for issue in unused:
-                pkg = issue.package or ""
-                if not pkg:
-                    continue
 
-                if safe:
-                    ok = Confirm.ask(
-                        f"  Remove [pkg]{pkg}[/]?  "
-                        f"[dim_text](Note: may be a transitive or dynamic dep)[/]"
-                    )
-                    if not ok:
-                        continue
+def _fix_outdated(report: DiagnosisReport, path: str, safe: bool) -> int:
+    outdated = [i for i in report.issues if i.code == "PKG_OUTDATED"]
+    if not outdated:
+        return 0
 
-                console.print(f"  [dim_text]Running: pip uninstall -y {pkg}[/]")
-                result = subprocess.run(
-                    [sys.executable, "-m", "pip", "uninstall", "-y", pkg],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    console.print(f"  [ok]✔  {pkg} removed.[/]")
-                    actions_taken += 1
-                else:
-                    err_console.print(f"  [error]✖  Failed to remove {pkg}[/]")
+    console.print(
+        f"\n[section]Found {len(outdated)} outdated package(s) to upgrade:[/]"
+    )
+    actions = 0
+    for issue in outdated:
+        pkg = issue.package or issue.extra.get("name", "")
+        if not pkg:
+            continue
+        latest = issue.extra.get("latest_version", "latest")
+        if safe:
+            if not Confirm.ask(f"  Upgrade [pkg]{pkg}[/] → {latest}?"):
+                continue
 
-    # ── Create virtualenv if missing ───────────────────────────
-    no_venv = any(i.code == "ENV_NO_VENV" for i in report_data.issues)
-    if no_venv:
-        venv_path = Path(path) / ".venv"
-        if not venv_path.exists():
-            should_create = True
-            if safe:
-                should_create = Confirm.ask(
-                    f"  Create a virtual environment at [code]{venv_path}[/]?"
-                )
-            if should_create:
-                console.print(f"  [dim_text]Running: python -m venv {venv_path}[/]")
-                result = subprocess.run(
-                    [sys.executable, "-m", "venv", str(venv_path)],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    console.print(f"  [ok]✔  Virtual environment created at {venv_path}[/]")
-                    actions_taken += 1
-                else:
-                    err_console.print(f"  [error]✖  Failed to create venv[/]")
+        console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", pkg]
+        )
+        if result.returncode == 0:
+            console.print(f"  [ok]✔  {pkg} upgraded to {latest}[/]")
+            actions += 1
+            from pydoctor.utils.pip_utils import update_requirements_file
 
+            req_file = Path(path) / "requirements.txt"
+            if req_file.is_file():
+                update_requirements_file(req_file, pkg, f"=={latest}")
+        else:
+            err_console.print(f"  [error]✖  Failed to upgrade {pkg}[/]")
+    return actions
+
+
+def _fix_unused(report: DiagnosisReport, path: str, safe: bool) -> int:
+    unused = [i for i in report.issues if i.code == "UNUSED_PACKAGE"]
+    if not unused:
+        return 0
+
+    console.print(f"\n[section]Found {len(unused)} possibly unused package(s):[/]")
+    actions = 0
+    for issue in unused:
+        pkg = issue.package or ""
+        if not pkg:
+            continue
+        if safe:
+            if not Confirm.ask(f"  Remove [pkg]{pkg}[/]?"):
+                continue
+
+        console.print(f"  [dim_text]Running: pip uninstall -y {pkg}[/]")
+        result = subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", pkg])
+        if result.returncode == 0:
+            console.print(f"  [ok]✔  {pkg} removed.[/]")
+            actions += 1
+        else:
+            err_console.print(f"  [error]✖  Failed to remove {pkg}[/]")
+    return actions
+
+
+def _fix_venv(report: DiagnosisReport, path: str, safe: bool) -> int:
+    if not any(i.code == "ENV_NO_VENV" for i in report.issues):
+        return 0
+
+    venv_path = Path(path) / ".venv"
+    if venv_path.exists():
+        return 0
+
+    if safe:
+        if not Confirm.ask(f"  Create a virtual environment at [code]{venv_path}[/]?"):
+            return 0
+
+    console.print(f"  [dim_text]Running: python -m venv {venv_path}[/]")
+    result = subprocess.run([sys.executable, "-m", "venv", str(venv_path)])
+    if result.returncode == 0:
+        console.print(f"  [ok]✔  Virtual environment created at {venv_path}[/]")
+        return 1
+    err_console.print("  [error]✖  Failed to create venv[/]")
+    return 0
+
+
+def _render_fix_summary(actions: int) -> None:
     console.print()
-    if actions_taken:
+    if actions:
         console.print(
             Panel(
-                f"[ok]✔  {actions_taken} fix(es) applied successfully.[/]",
-                border_style="ok",
+                f"[ok]✔  {actions} fix(es) applied successfully.[/]", border_style="ok"
             )
         )
     else:
-        console.print(
-            Panel(
-                "[dim_text]No fixes were applied.[/]",
-                border_style="rule",
-            )
-        )
+        console.print(Panel("[dim_text]No fixes were applied.[/]", border_style="rule"))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -566,7 +553,9 @@ def cache_clear() -> None:
 def cache_purge() -> None:
     """🧹  Purge only expired cache entries."""
     removed = CacheManager().purge_expired()
-    console.print(f"[ok]✔  Purged {removed} expired cache entr{'y' if removed==1 else 'ies'}.[/]")
+    console.print(
+        f"[ok]✔  Purged {removed} expired cache entr{'y' if removed==1 else 'ies'}.[/]"
+    )
 
 
 @cache_app.command("info")
@@ -602,7 +591,9 @@ def _render_verbose_details(report: DiagnosisReport) -> None:
     """
     In verbose mode, print a full detail panel for every non-OK issue.
     """
-    non_ok = [i for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)]
+    non_ok = [
+        i for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)
+    ]
     if not non_ok:
         return
     console.print("\n[section]Detailed Issue Breakdown[/]\n")

@@ -13,7 +13,6 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 from pydoctor.utils.subprocess_utils import run_pip_command
 
@@ -129,7 +128,7 @@ def parse_requirements_file(req_path: Path) -> dict[str, str]:
 # ──────────────────────────────────────────────────────────────
 
 
-def get_pip_version() -> Optional[str]:
+def get_pip_version() -> str | None:
     """
     Return the version string of the currently active pip installation.
 

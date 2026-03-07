@@ -11,10 +11,10 @@ Responsible for:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
-from pydoctor.config.settings import PYTHON_EXTENSION, IGNORED_DIRS
+from pydoctor.config.settings import IGNORED_DIRS, PYTHON_EXTENSION
 
 
 def collect_python_files(root: Path) -> list[Path]:

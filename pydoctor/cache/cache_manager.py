@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydoctor.config.settings import CACHE_FILE, CACHE_TTL_SECONDS, PYDOCTOR_HOME
 
@@ -53,7 +53,7 @@ class CacheManager:
 
     # ── Public API ─────────────────────────────────────────────
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """
         Retrieve a cached value by key.
 

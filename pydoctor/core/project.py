@@ -12,13 +12,11 @@ independently.
 
 from __future__ import annotations
 
-import ast
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
-from pydoctor.config.settings import PYTHON_EXTENSION, IGNORED_DIRS
 from pydoctor.utils.file_utils import collect_python_files
 from pydoctor.utils.pip_utils import get_installed_packages, parse_requirements_file
 
@@ -60,7 +58,7 @@ class ProjectContext:
     # ── Factory method ─────────────────────────────────────────
 
     @classmethod
-    def from_path(cls, path: str | Path) -> "ProjectContext":
+    def from_path(cls, path: str | Path) -> ProjectContext:
         """
         Build a ProjectContext by scanning ``path``.
 
@@ -100,6 +98,7 @@ class ProjectContext:
         # Also check for VIRTUAL_ENV env var as a fallback
         import os
         import platform
+
         from pydoctor.utils.pip_utils import get_dependency_graph
 
         in_venv = (sys.prefix != sys.base_prefix) or bool(os.environ.get("VIRTUAL_ENV"))
