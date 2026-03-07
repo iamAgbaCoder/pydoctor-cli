@@ -43,15 +43,13 @@ Your project contains severe risks that should be fixed before production.
 
 PyDoctor isn't just a scanner; it's a complete remediation tool.
 
-| Category                | Description                                                                        |
-| :---------------------- | :--------------------------------------------------------------------------------- |
-| **🔍 Env Analysis**     | Detects missing virtualenvs, outdated pip, or deprecated Python versions.          |
-| **🏗️ Dependency Fix**   | Automatically resolves conflicts and installs missing packages.                    |
-| **🛡️ Security**         | Integrates with [OSV.dev API](https://osv.dev/) to check against known CVEs/GHSAs. |
-| **🧹 Unused Detection** | Uses AST analysis to identify declared packages that are never imported.           |
-| **🚀 Multi-Manager**    | Intelligent support for **pip**, **Poetry**, **uv**, and **pdm**.                  |
-| **🎨 Rich UI**          | Beautiful progress spinners, icons, and color-coded severities.                    |
-| **🤖 CI/CD Ready**      | Structured JSON output and non-zero exit codes for failing health scores.          |
+- **🔍 Env Analysis**: Detects missing virtualenvs, outdated pip, or deprecated Python versions.
+- **🏗️ Dependency Fix**: Automatically resolves conflicts and installs missing packages.
+- **🛡️ Security**: Integrates with [OSV.dev API](https://osv.dev/) to check against known CVEs/GHSAs.
+- **🧹 Unused Detection**: Uses AST analysis to identify declared packages that are never imported.
+- **🚀 Multi-Manager**: Intelligent support for **pip**, **Poetry**, **uv**, and **pdm**.
+- **🎨 Rich UI**: Beautiful progress spinners, icons, and color-coded severities.
+- **🤖 CI/CD Ready**: Structured JSON output and non-zero exit codes for failing health scores.
 
 ---
 
@@ -98,9 +96,6 @@ Let PyDoctor perform the heavy lifting. It will offer to install missing package
 pydoctor fix
 ```
 
-> [!TIP]
-> Use `pydoctor fix --no-safe` in local development to apply all fixes without confirmation prompts.
-
 ---
 
 ## ⚙️ Configuration
@@ -120,29 +115,15 @@ min_health_score = 80
 
 ## 🔬 Architecture
 
-PyDoctor is built with a clean, modular engine designed for extensibility.
+PyDoctor is built with a clean, modular engine designed for extensibility. It uses a **Project Context** to share metadata across specialized scanners for environment, dependencies, security, and usage.
 
-```mermaid
-graph TD
-    CLI[CLI Interface] --> Engine[Core Engine]
-    Engine --> Context[Project Context]
-    Context --> Env[Env Scanner]
-    Context --> Dep[Dep Scanner]
-    Context --> Sec[Security Scanner]
-    Context --> Unused[Unused Scanner]
-    Env & Dep & Sec & Unused --> Report[Diagnosis Report]
-    Report --> Output[Terminal / JSON]
-```
-
-<details>
-<summary>📂 Project Structure</summary>
+### 📂 Project Structure
 
 - `pydoctor/cli/`: Typer command handlers.
-- `pydoctor/core/`: The "Heart" (Analyzer, Context, logic).
+- `pydoctor/core/`: The core engine (Analyzer, Context, logic).
 - `pydoctor/scanners/`: Individual diagnostic modules.
 - `pydoctor/reports/`: Visual and JSON formatting.
 - `pydoctor/utils/`: High-performance pip, subprocess, and AST helpers.
-</details>
 
 ---
 
