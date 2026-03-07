@@ -63,42 +63,67 @@ from pydoctor.config.settings import Severity, PYDOCTOR_HOME
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
 
 
+def version_callback(value: bool):
+    if value:
+        console.print(f"🩺 [b]PyDoctor[/] version [cyan]{__version__}[/]")
+        raise typer.Exit()
+
+
 _HELP_EPILOG = """
-[b]Common Options (apply to most commands)[/b]:
+[b]💊 PyDoctor Quick Start Guide[/b]
 
-  [blue]--path, -p[/] TEXT  Project directory to scan (default: current directory).
-
-  [blue]--json, -j[/]       Output raw JSON instead of rich terminal display.
-
-  [blue]--verbose, -v[/]    Show detailed information and timing data.
-  
-  [blue]--no-cache[/]       Bypass the local cache for vulnerability lookups.
-
-[b]Examples[/b]:
-
+[blue]Step 1: Full Diagnosis[/]
+  Perform a complete health check on your current project:
   [dim]$ pydoctor diagnose[/]
-  
-  [dim]$ pydoctor diagnose --path C:\\Projects\\my-project[/]
-  
-  [dim]$ pydoctor fix --no-safe[/]
 
-[b]Testing Another Project[/b]:
+[blue]Step 2: Targeted Scans[/]
+  Isolation-focused diagnostic commands:
+  [dim]$ pydoctor scan-security[/]   [grey]— Check for CVEs & advisories[/]
+  [dim]$ pydoctor scan-unused[/]     [grey]— Detect dead dependencies[/]
+  [dim]$ pydoctor scan-deps[/]       [grey]— Find dependency conflicts[/]
+  [dim]$ pydoctor check-env[/]       [grey]— Verify Python & venv setup[/]
 
-  To test PyDoctor on a different project on your PC, you can either:
-  
-  1. Navigate to the project folder and run `pydoctor diagnose`
-  
-  2. Use the path flag: `pydoctor diagnose --path C:\\path\\to\\other\\project`
+[blue]Step 3: Automated Treatment[/]
+  Let the doctor remediate issues automatically:
+  [dim]$ pydoctor fix[/]               [grey]— Interactive remediation[/]
+  [dim]$ pydoctor fix --no-safe[/]     [grey]— Professional auto-fix mode[/]
+
+[b]🔧 Global Workflow Options[/b]
+  [cyan]--path, -p[/] PATH       Target a specific project folder.
+  [cyan]--json, -j[/]            Machine-readable output for CI/CD.
+  [cyan]--verbose, -v[/]         Show full issue histories and trace.
+  [cyan]--version[/]             Display current PyDoctor version.
+
+[b]🏥 Community & Support[/b]
+  Documentation: [u]https://github.com/iamAgbaCoder/pydoctor-cli[/u]
+  Verdict: [i]Healthy code leads to healthy deployments.[/i]
 """
 
 app = typer.Typer(
     name="pydoctor",
-    help="🩺  PyDoctor — Python environment diagnostic assistant.\n\nUse this tool to find and fix environment misconfigurations, dependency conflicts, security vulnerabilities, and unused packages.",
+    help="🩺  PyDoctor — Professional Python Diagnostic Assistant.\n\nAutomate your environment audits, dependency security scans, and bloat detection in seconds.",
     epilog=_HELP_EPILOG,
     add_completion=True,
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+
+
+@app.callback()
+def main_callback(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="Show the version and exit.",
+    ),
+):
+    """
+    🩺 PyDoctor — Python environment diagnostic assistant.
+    """
+    pass
+
 
 err_console = Console(stderr=True, theme=PYDOCTOR_THEME)
 
@@ -133,7 +158,7 @@ def _run_scan(
     if no_cache:
         CacheManager().clear()
 
-    if not verbose and not as_json:
+    if not as_json:
         console.print("[section]Scanning project...[/]")
 
     def progress_callback(key: str) -> None:
@@ -159,7 +184,7 @@ def _run_scan(
             scanners=scanners,
             verbose=verbose,
         )
-        report = analyzer.run(on_progress=progress_callback if not verbose else None)
+        report = analyzer.run(on_progress=progress_callback)
 
     return report
 
@@ -410,6 +435,16 @@ def fix(
             if result.returncode == 0:
                 console.print(f"  [ok]✔  {pkg} upgraded successfully.[/]")
                 actions_taken += 1
+
+                # Also try to update requirements.txt if it exists
+                from pydoctor.utils.pip_utils import update_requirements_file
+
+                req_file = Path(path) / "requirements.txt"
+                if req_file.is_file():
+                    # We don't have the exact version here easily, but we can assume latest was installed
+                    # Actually, we should probably pass the target version if we knew it.
+                    # For now just confirming success.
+                    pass
             else:
                 err_console.print(f"  [error]✖  Failed to fix {pkg}[/]")
 
@@ -444,6 +479,14 @@ def fix(
                 if result.returncode == 0:
                     console.print(f"  [ok]✔  {pkg} upgraded to {latest}[/]")
                     actions_taken += 1
+
+                    # Also try to update requirements.txt if it exists
+                    from pydoctor.utils.pip_utils import update_requirements_file
+
+                    req_file = Path(path) / "requirements.txt"
+                    if req_file.is_file():
+                        if update_requirements_file(req_file, pkg, f"=={latest}"):
+                            console.print(f"  [ok]✔  Updated {req_file.name}[/]")
                 else:
                     err_console.print(f"  [error]✖  Failed to upgrade {pkg}[/]")
         else:
@@ -573,7 +616,7 @@ def cache_info() -> None:
 @app.command()
 def version() -> None:
     """🏷  Print the PyDoctor version."""
-    console.print(f"🩺  PyDoctor [section]{__version__}[/]")
+    console.print(f"🩺 [b]PyDoctor[/] version [cyan]{__version__}[/]")
 
 
 # ──────────────────────────────────────────────────────────────

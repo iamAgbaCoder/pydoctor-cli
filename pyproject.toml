@@ -18,6 +18,7 @@ dependencies = [
     "requests>=2.28",
     "packaging>=23",
     "pipdeptree>=2.5",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,8 @@ dev = [
     "black",
     "mypy",
     "types-requests",
+    "build",
+    "twine",
 ]
 
 [project.scripts]
@@ -40,6 +43,18 @@ pydoctor = "pydoctor.cli.main:main"
 # ──────────────────────────────────────────────────────────────
 # Tool configs
 # ──────────────────────────────────────────────────────────────
+
+[tool.pydoctor]
+# Packages to ignore during unused dependency scanning
+ignored_packages = [
+    "pydoctor-cli",
+    "setuptools",
+    "wheel",
+    "twine",
+]
+# Minimum health score to pass CI (0-100)
+min_health_score = 80
+
 
 [tool.setuptools.packages.find]
 where = ["."]

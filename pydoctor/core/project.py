@@ -52,6 +52,10 @@ class ProjectContext:
         )
     )
     in_virtualenv: bool = False
+    dependency_graph: list[dict] = field(default_factory=list)
+    platform_info: str = ""
+    os_name: str = ""
+    config: dict[str, Any] = field(default_factory=dict)
 
     # ── Factory method ─────────────────────────────────────────
 
@@ -65,6 +69,8 @@ class ProjectContext:
         2. Installed-packages enumeration via pip internals
         3. requirements.txt / pyproject.toml parsing
         4. Virtual-environment detection
+        5. Dependency tree collection
+        6. System platform discovery
 
         Parameters
         ----------
@@ -93,8 +99,30 @@ class ProjectContext:
         # sys.prefix != sys.base_prefix  →  in a venv
         # Also check for VIRTUAL_ENV env var as a fallback
         import os
+        import platform
+        from pydoctor.utils.pip_utils import get_dependency_graph
 
         in_venv = (sys.prefix != sys.base_prefix) or bool(os.environ.get("VIRTUAL_ENV"))
+        graph = get_dependency_graph()
+
+        # Load configuration from pyproject.toml
+        config = {}
+        pyproject = root / "pyproject.toml"
+        if pyproject.is_file():
+            try:
+                if sys.version_info >= (3, 11):
+                    import tomllib
+
+                    with pyproject.open("rb") as f:
+                        data = tomllib.load(f)
+                else:
+                    import tomli
+
+                    with pyproject.open("rb") as f:
+                        data = tomli.load(f)
+                config = data.get("tool", {}).get("pydoctor", {})
+            except Exception:
+                pass  # Fallback to empty config if parsing fails
 
         return cls(
             root=root,
@@ -102,4 +130,8 @@ class ProjectContext:
             installed_packages=installed,
             declared_deps=declared,
             in_virtualenv=in_venv,
+            dependency_graph=graph,
+            platform_info=platform.platform(),
+            os_name=platform.system(),
+            config=config,
         )

@@ -88,6 +88,21 @@ pydoctor diagnose --json > report.json
 
 ---
 
+## ⚙️ Configuration
+
+PyDoctor is zero-config by default, but you can customize its behavior in your `pyproject.toml` file:
+
+```toml
+[tool.pydoctor]
+# Packages to ignore during unused dependency scanning
+ignored_packages = ["setuptools", "wheel"]
+
+# Minimum health score required for CI to pass (0-100)
+min_health_score = 80
+```
+
+---
+
 ## 🔬 Architecture
 
 PyDoctor is designed with a **clean, modular architecture** making it easy to mock, test, and extend.
@@ -95,15 +110,14 @@ PyDoctor is designed with a **clean, modular architecture** making it easy to mo
 ```text
 pydoctor/
 ├── cli/          # Handlers for Typer CLI commands
-├── core/         # Core data-models (Issue, Report, ProjectContext) and the orchestrator Analyzer
-├── scanners/     # Individual check modules (Env, Deps, Vulns, Outdated, Unused)
-├── reports/      # Formatting logic (Terminal Rich tables + JSON exports)
-├── cache/        # Local JSON cache management for networks API calls
-├── security/     # OSV.dev batch API integration
-└── utils/        # Shared system/pip/AST-parsing utils
+├── core/         # Core engine (Analyzer, ProjectContext, Report)
+├── scanners/     # Diagnostic modules (Env, Security, Unused, etc.)
+├── reports/      # Formatting logic (Terminal + JSON)
+├── cache/        # Local JSON cache for security API calls
+└── utils/        # Shared pip, subprocess, and AST helpers
 ```
 
-Each scanner takes a snapshot `ProjectContext` and yields standard `Issue` dataclasses which are aggregated by the report engine.
+Each scanner takes a snapshot `ProjectContext` and yields standard `Issue` dataclasses which are aggregated by the engine.
 
 ---
 
@@ -133,4 +147,3 @@ ruff check pydoctor
 ## 📜 License
 
 MIT License.
-python -m pip install -e ".[dev]"

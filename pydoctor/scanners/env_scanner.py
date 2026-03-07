@@ -48,7 +48,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
     issues.extend(_check_python_version(ctx))
     issues.extend(_check_virtual_environment(ctx))
     issues.extend(_check_pip_version())
-    issues.extend(_check_platform())
+    issues.extend(_check_platform(ctx))
 
     return issues
 
@@ -200,11 +200,12 @@ def _check_pip_version() -> List[Issue]:
     ]
 
 
-def _check_platform() -> List[Issue]:
+def _check_platform(ctx: ProjectContext) -> List[Issue]:
     """Emit an informational note about the current OS and architecture."""
-    os_name = platform.system()  # e.g. "Windows", "Linux", "Darwin"
+    os_name = ctx.os_name  # e.g. "Windows", "Linux", "Darwin"
     arch = platform.machine()  # e.g. "AMD64", "x86_64"
     release = platform.release()
+    python_path = ctx.python_executable
 
     return [
         Issue(
@@ -212,7 +213,9 @@ def _check_platform() -> List[Issue]:
             code="ENV_PLATFORM_INFO",
             severity=Severity.INFO,
             title=f"Platform: {os_name} {release} ({arch})",
-            description=f"Running on {os_name} {release}, architecture {arch}.",
+            description=(
+                f"OS: {os_name} {release}\n" f"Arch: {arch}\n" f"Python: {python_path}"
+            ),
             recommendation="",
         )
     ]

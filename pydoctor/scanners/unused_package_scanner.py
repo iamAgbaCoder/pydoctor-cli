@@ -97,14 +97,60 @@ def scan(ctx: ProjectContext) -> List[Issue]:
         # Also add the raw import name as a fallback
         imported_packages.add(name.lower().replace("_", "-"))
 
-    # Step 3: Find declared dependencies that are NOT imported
+    # Step 3: Account for implicit dependencies
+    # Walk the entire tree. If a package (or any of its parents in the tree)
+    # is imported, then all of its descendants are "used".
+    implicitly_used: set[str] = set()
+
+    def mark_descendants_used(node: dict):
+        for dep in node.get("dependencies", []):
+            dname = dep.get("package_name", "").lower().replace("_", "-")
+            if dname not in implicitly_used:
+                implicitly_used.add(dname)
+                mark_descendants_used(dep)
+
+    def search_and_mark(nodes: list[dict]):
+        for node in nodes:
+            name = node.get("package_name", "").lower().replace("_", "-")
+            if name in imported_packages:
+                mark_descendants_used(node)
+            # Continue searching in children even if this node wasn't imported
+            # (as a child of this node might be imported)
+            search_and_mark(node.get("dependencies", []))
+
+    search_and_mark(ctx.dependency_graph)
+
+    # Step 4: Find declared dependencies that are NOT imported AND NOT implicitly used
     unused: list[str] = []
+
+    # Merge hardcoded defaults with user configuration
+    ignored = {
+        "black",
+        "pytest",
+        "flake8",
+        "mypy",
+        "tox",
+        "isort",
+        "pydoctor",
+        "rich",
+        "pydoctor-cli",
+        "setuptools",
+        "wheel",
+    }
+    if "ignored_packages" in ctx.config:
+        ignored.update(
+            p.lower().replace("_", "-") for p in ctx.config["ignored_packages"]
+        )
+
     for dep_name in ctx.declared_deps:
         normalised = dep_name.lower().replace("_", "-")
-        if normalised not in imported_packages:
+        if normalised not in imported_packages and normalised not in implicitly_used:
+            # Final check: is it a dev-only tool or ignored by config?
+            if normalised in ignored:
+                continue
             unused.append(dep_name)
 
-    # Step 4: Produce issues
+    # Step 5: Produce issues
     if not unused:
         issues.append(
             Issue(
@@ -112,7 +158,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
                 code="UNUSED_NONE_FOUND",
                 severity=Severity.OK,
                 title="No unused packages detected",
-                description="All declared dependencies appear to be imported.",
+                description="All declared dependencies appear to be imported or required by imported packages.",
                 recommendation="",
             )
         )
