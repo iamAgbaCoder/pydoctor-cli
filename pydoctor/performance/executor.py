@@ -20,7 +20,6 @@ from typing import Callable, Iterable, TypeVar, Any
 
 from pydoctor.config.settings import MAX_WORKERS
 
-
 T = TypeVar("T")
 
 
@@ -61,9 +60,7 @@ def run_parallel(
         return results
 
     with ThreadPoolExecutor(max_workers=min(workers, len(item_list))) as executor:
-        future_map: dict[Future, Any] = {
-            executor.submit(fn, item): item for item in item_list
-        }
+        future_map: dict[Future, Any] = {executor.submit(fn, item): item for item in item_list}
         for future in as_completed(future_map, timeout=timeout):
             try:
                 result = future.result()

@@ -15,7 +15,6 @@ from typing import Optional
 
 from pydoctor.utils.file_utils import read_file_safe
 
-
 # ──────────────────────────────────────────────────────────────
 # Top-level import extractor
 # ──────────────────────────────────────────────────────────────

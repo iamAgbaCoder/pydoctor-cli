@@ -12,7 +12,6 @@ from __future__ import annotations
 from rich.style import Style
 from rich.theme import Theme
 
-
 # ── Severity colours ───────────────────────────────────────────
 STYLE_OK = Style(color="bright_green", bold=True)
 STYLE_INFO = Style(color="cyan", bold=False)

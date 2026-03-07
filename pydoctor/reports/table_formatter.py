@@ -49,9 +49,7 @@ def render_report(report: DiagnosisReport, verbose: bool = False) -> None:
 
     # Auto-expand details if we are in a targeted scan (only one category) or verbose
     categories = {
-        i.category
-        for i in report.issues
-        if i.severity not in (Severity.OK, Severity.INFO)
+        i.category for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)
     }
 
     if verbose or len(categories) == 1:
@@ -173,9 +171,7 @@ def _render_recommendations(report: DiagnosisReport, verbose: bool = False) -> N
         shown += 1
 
     if not verbose and len(non_ok) > limit:
-        console.print(
-            f"\n[dim_text]... and {len(non_ok) - limit} more recommendations.[/]"
-        )
+        console.print(f"\n[dim_text]... and {len(non_ok) - limit} more recommendations.[/]")
 
 
 def _render_next_steps(verbose: bool = False) -> None:
@@ -195,9 +191,7 @@ def _render_next_steps(verbose: bool = False) -> None:
 def _render_detailed_security(report: DiagnosisReport) -> None:
     """Group vulnerabilities by package for verbose output."""
     sec_issues = [
-        i
-        for i in report.issues
-        if i.category == "security" and i.severity != Severity.OK
+        i for i in report.issues if i.category == "security" and i.severity != Severity.OK
     ]
     if not sec_issues:
         return
@@ -219,20 +213,14 @@ def _render_detailed_security(report: DiagnosisReport) -> None:
         for issue in issues:
             c = "error" if issue.severity == Severity.CRITICAL else "warning"
             display_title = issue.title
-            if issue.package and display_title.lower().startswith(
-                issue.package.lower()
-            ):
+            if issue.package and display_title.lower().startswith(issue.package.lower()):
                 display_title = display_title[len(issue.package) :].strip(" -—")
             console.print(f"  [{c}]{display_title}[/] - {issue.description}")
 
 
 def _render_detailed_outdated(report: DiagnosisReport) -> None:
     """Show details for outdated packages."""
-    outdated = [
-        i
-        for i in report.issues
-        if i.category == "outdated" and i.severity != Severity.OK
-    ]
+    outdated = [i for i in report.issues if i.category == "outdated" and i.severity != Severity.OK]
     if not outdated:
         return
 
@@ -253,9 +241,7 @@ def _render_detailed_outdated(report: DiagnosisReport) -> None:
 
 def _render_detailed_unused(report: DiagnosisReport) -> None:
     """Show detailed unused with confidence."""
-    unused = [
-        i for i in report.issues if i.category == "unused" and i.severity != Severity.OK
-    ]
+    unused = [i for i in report.issues if i.category == "unused" and i.severity != Severity.OK]
     if not unused:
         return
 
@@ -271,9 +257,7 @@ def _render_detailed_unused(report: DiagnosisReport) -> None:
 def _render_detailed_environment(report: DiagnosisReport) -> None:
     """Show detailed environment issues."""
     env_issues = [
-        i
-        for i in report.issues
-        if i.category == "environment" and i.severity != Severity.OK
+        i for i in report.issues if i.category == "environment" and i.severity != Severity.OK
     ]
     if not env_issues:
         return
@@ -288,9 +272,7 @@ def _render_detailed_environment(report: DiagnosisReport) -> None:
 def _render_detailed_dependencies(report: DiagnosisReport) -> None:
     """Show detailed dependency conflicts."""
     dep_issues = [
-        i
-        for i in report.issues
-        if i.category == "dependencies" and i.severity != Severity.OK
+        i for i in report.issues if i.category == "dependencies" and i.severity != Severity.OK
     ]
     if not dep_issues:
         return

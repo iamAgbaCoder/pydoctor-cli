@@ -16,7 +16,6 @@ from pydoctor.config.settings import Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.scanners import env_scanner
 
-
 # ── Helpers ────────────────────────────────────────────────────
 
 
@@ -44,10 +43,7 @@ class TestPythonVersionCheck:
         issues = env_scanner.scan(ctx)
         py_issues = [i for i in issues if "python" in i.code.lower()]
         # Should be OK or WARNING, never ERROR for the running interpreter
-        assert any(
-            i.severity in (Severity.OK, Severity.WARNING, Severity.INFO)
-            for i in py_issues
-        )
+        assert any(i.severity in (Severity.OK, Severity.WARNING, Severity.INFO) for i in py_issues)
 
     def test_old_python_gives_error(self, tmp_path):
         ctx = _make_ctx(tmp_path)
@@ -95,15 +91,11 @@ class TestPipVersionCheck:
         assert any(i.code == "ENV_PIP_MISSING" for i in issues)
 
     def test_pip_outdated(self):
-        with patch(
-            "pydoctor.scanners.env_scanner.get_pip_version", return_value="20.0.0"
-        ):
+        with patch("pydoctor.scanners.env_scanner.get_pip_version", return_value="20.0.0"):
             issues = env_scanner._check_pip_version()
         assert any(i.code == "ENV_PIP_OUTDATED" for i in issues)
 
     def test_pip_ok(self):
-        with patch(
-            "pydoctor.scanners.env_scanner.get_pip_version", return_value="23.1.0"
-        ):
+        with patch("pydoctor.scanners.env_scanner.get_pip_version", return_value="23.1.0"):
             issues = env_scanner._check_pip_version()
         assert any(i.code == "ENV_PIP_OK" for i in issues)

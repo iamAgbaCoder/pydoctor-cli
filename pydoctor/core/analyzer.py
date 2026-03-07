@@ -31,7 +31,6 @@ from pydoctor.scanners import (
     unused_package_scanner,
 )
 
-
 # ──────────────────────────────────────────────────────────────
 # Scanner registry
 # ──────────────────────────────────────────────────────────────
@@ -96,9 +95,7 @@ class Analyzer:
         scanner_timings: dict[str, float] = {}
 
         # Parallel execution for independence (each scanner gets its own thread)
-        with ThreadPoolExecutor(
-            max_workers=min(MAX_WORKERS, len(self._scanner_keys))
-        ) as pool:
+        with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(self._scanner_keys))) as pool:
             future_map = {}
             for key in self._scanner_keys:
                 fn = SCANNER_REGISTRY.get(key)

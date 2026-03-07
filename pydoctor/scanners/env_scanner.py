@@ -26,7 +26,6 @@ from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
 from pydoctor.utils.pip_utils import get_pip_version
 
-
 # ── Category label ─────────────────────────────────────────────
 CATEGORY = "environment"
 
@@ -213,9 +212,7 @@ def _check_platform(ctx: ProjectContext) -> List[Issue]:
             code="ENV_PLATFORM_INFO",
             severity=Severity.INFO,
             title=f"Platform: {os_name} {release} ({arch})",
-            description=(
-                f"OS: {os_name} {release}\n" f"Arch: {arch}\n" f"Python: {python_path}"
-            ),
+            description=(f"OS: {os_name} {release}\n" f"Arch: {arch}\n" f"Python: {python_path}"),
             recommendation="",
         )
     ]

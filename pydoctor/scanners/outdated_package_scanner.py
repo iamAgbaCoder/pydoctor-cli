@@ -21,7 +21,6 @@ from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
 from pydoctor.utils.pip_utils import get_outdated_packages
 
-
 CATEGORY = "outdated"
 
 

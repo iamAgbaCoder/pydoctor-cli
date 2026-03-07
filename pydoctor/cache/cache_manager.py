@@ -111,9 +111,7 @@ class CacheManager:
             Number of entries removed.
         """
         now = time.time()
-        expired = [
-            k for k, v in self._data.items() if now - v.get("_ts", 0.0) > self._ttl
-        ]
+        expired = [k for k, v in self._data.items() if now - v.get("_ts", 0.0) > self._ttl]
         for k in expired:
             del self._data[k]
         if expired:

@@ -34,7 +34,6 @@ from pydoctor.utils.parser_utils import (
     import_name_to_package,
 )
 
-
 CATEGORY = "unused"
 
 # Standard library top-level modules — we exclude these from unused detection
@@ -66,9 +65,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
                     "Cannot detect unused packages without a requirements.txt or "
                     "pyproject.toml in the project root."
                 ),
-                recommendation=(
-                    "Create a requirements.txt with `pip freeze > requirements.txt`."
-                ),
+                recommendation=("Create a requirements.txt with `pip freeze > requirements.txt`."),
             )
         )
         return issues
@@ -138,9 +135,7 @@ def scan(ctx: ProjectContext) -> List[Issue]:
         "wheel",
     }
     if "ignored_packages" in ctx.config:
-        ignored.update(
-            p.lower().replace("_", "-") for p in ctx.config["ignored_packages"]
-        )
+        ignored.update(p.lower().replace("_", "-") for p in ctx.config["ignored_packages"])
 
     for dep_name in ctx.declared_deps:
         normalised = dep_name.lower().replace("_", "-")

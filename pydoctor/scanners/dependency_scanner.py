@@ -28,7 +28,6 @@ from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
 from pydoctor.utils.subprocess_utils import run_pip_command
 
-
 CATEGORY = "dependencies"
 
 # Pattern: "packageA 1.2 requires something>=2.0, but 1.5 is installed"
@@ -167,8 +166,7 @@ def _make_conflict_issue(pkg: str, ver: str, req: str, installed: str) -> Issue:
             f"which is incompatible."
         ),
         recommendation=(
-            f"Resolve the conflict by upgrading or pinning packages: "
-            f'`pip install "{req}"`'
+            f"Resolve the conflict by upgrading or pinning packages: " f'`pip install "{req}"`'
         ),
         package=pkg.lower(),
         extra={

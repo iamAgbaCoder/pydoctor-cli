@@ -17,7 +17,6 @@ from typing import Optional
 
 from pydoctor.utils.subprocess_utils import run_pip_command
 
-
 # ──────────────────────────────────────────────────────────────
 # Installed packages
 # ──────────────────────────────────────────────────────────────
