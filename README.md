@@ -1,40 +1,70 @@
+<div align="center">
+
 # 🩺 PyDoctor
 
-[![CI](https://github.com/iamAgbaCoder/pydoctor-cli/workflows/CI/badge.svg)](https://github.com/iamAgbaCoder/pydoctor-cli/actions)
-[![PyPI version](https://img.shields.io/pypi/v/pydoctor-cli.svg)](https://pypi.org/project/pydoctor-cli/)
-[![Python versions](https://img.shields.io/pypi/pyversions/pydoctor-cli.svg)](https://pypi.org/project/pydoctor-cli/)
+**PyDoctor** is a premium, developer-friendly diagnostic assistant for Python environments. It acts like a personal physician for your code — scanning your project and environment to prescribe fixes for misconfigurations, dependencies, and security vulnerabilities.
 
-**PyDoctor** is a premium, developer-friendly diagnostic assistant for Python environments. It acts like a doctor for your code — scanning your project and environment to prescribe fixes for misconfigurations, dependencies, and security vulnerabilities.
+[![CI Status](https://github.com/iamAgbaCoder/pydoctor-cli/actions/workflows/publish.yml/badge.svg)](https://github.com/iamAgbaCoder/pydoctor-cli/actions)
+[![PyPI version](https://img.shields.io/pypi/v/pydoctor-cli.svg?color=blue&style=flat-square)](https://pypi.org/project/pydoctor-cli/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pydoctor-cli.svg?style=flat-square)](https://pypi.org/project/pydoctor-cli/)
+[![License](https://img.shields.io/badge/license-Apache%202.0-orange.svg?style=flat-square)](LICENSE)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
+
+[Features](#-features) • [Quick Start](#-installation) • [Usage](#-usage) • [Configuration](#-configuration) • [Architecture](#-architecture)
+
+</div>
 
 ---
 
-## 🔥 Features
+## 📸 How it looks
 
-- **Environment Analysis**: Detects issues like missing virtual environments, outdated pip, or deprecated Python versions.
-- **Dependency Conflicts**: Automatically runs resolver checks (via pip check) and flags conflicting requirements or missing packages.
-- **Outdated Packages**: Scans your environment and lets you know what could be upgraded.
-- **Security & Vulnerabilities**: Integrates with the [OSV.dev API](https://osv.dev/) to check all installed packages against known CVEs and GHSAs. Responses are cached locally for speed.
-- **Unused Package Detection**: Parses your codebase's AST to identify packages listed in `requirements.txt` that are never actually imported.
-- **Beautiful CLI UI**: Powered by [Rich](https://github.com/Textualize/rich) (Icons, Progress Spinners, Color-coded severities).
-- **Speed**: Executes I/O-bound operations across concurrent thread pools.
-- **JSON Reporting**: Full structured output support via `--json` for CI/CD pipelines.
-- **Automated Remediation**: Run `pydoctor fix` to automatically perform upgrades, remove unused packages, resolve dependency conflicts, and initialize virtual environments.
-- **Package Manager Support**: Works with standard `pip` (`requirements.txt`), **Poetry**, **uv**, and **pdm**. It intelligently chooses the right tool to apply fixes.
+PyDoctor provides a beautiful, color-coded interface powered by [Rich](https://github.com/Textualize/rich).
+
+```text
+🩺 PyDoctor Diagnosis Report
+
+─────────────────────────────────── Results ────────────────────────────────────
+  Environment             ⚠ 1 issue detected
+  Dependencies            ✔ Healthy
+  Outdated Packages       ⚠ 3 detected
+  Security                ⚠ 2 vulnerabilities Found
+  Unused Packages         ⚠ 5 detected
+
+❤️  Project Health Score
+████████████░░░░░░░░ 60%
+
+🩺 Doctor's Verdict
+Your project contains severe risks that should be fixed before production.
+```
+
+---
+
+## ✨ Features
+
+PyDoctor isn't just a scanner; it's a complete remediation tool.
+
+| Category                | Description                                                                        |
+| :---------------------- | :--------------------------------------------------------------------------------- |
+| **🔍 Env Analysis**     | Detects missing virtualenvs, outdated pip, or deprecated Python versions.          |
+| **🏗️ Dependency Fix**   | Automatically resolves conflicts and installs missing packages.                    |
+| **🛡️ Security**         | Integrates with [OSV.dev API](https://osv.dev/) to check against known CVEs/GHSAs. |
+| **🧹 Unused Detection** | Uses AST analysis to identify declared packages that are never imported.           |
+| **🚀 Multi-Manager**    | Intelligent support for **pip**, **Poetry**, **uv**, and **pdm**.                  |
+| **🎨 Rich UI**          | Beautiful progress spinners, icons, and color-coded severities.                    |
+| **🤖 CI/CD Ready**      | Structured JSON output and non-zero exit codes for failing health scores.          |
 
 ---
 
 ## 📦 Installation
 
-PyDoctor requires **Python 3.10+**.
+PyDoctor requires **Python 3.10+**. For the best experience, we recommend using `pipx`.
 
 ```bash
-pip install pydoctor-cli
-```
-
-_(Or install it via pipx to keep it globally available but isolated):_
-
-```bash
+# Recommended: Install globally in an isolated environment
 pipx install pydoctor-cli
+
+# Standard pip installation
+pip install pydoctor-cli
 ```
 
 ---
@@ -43,60 +73,44 @@ pipx install pydoctor-cli
 
 ### Full Diagnosis
 
-Run the full suite of checks in your current directory:
+Run a comprehensive check-up on your project.
 
 ```bash
 pydoctor diagnose
 ```
 
-Or specify a path:
-
-```bash
-pydoctor diagnose --path /path/to/project
-```
-
 ### Targeted Scans
 
+Need a second opinion on a specific area?
+
 ```bash
-# Check the Python environment (Python version, venv, pip)
-pydoctor check-env
-
-# Scan dependency tree constraints
-pydoctor scan-deps
-
-# Check for security vulnerabilities via OSV
-pydoctor scan-security
-
-# Detect unused packages by parsing your .py imports
-pydoctor scan-unused
+pydoctor check-env       # Check Python, venv, and pip
+pydoctor scan-deps       # Scan dependency constraints
+pydoctor scan-security   # Check for security vulnerabilities
+pydoctor scan-unused     # Identify imports that aren't used
 ```
 
-### Automated Fixes
+### 🔨 The Surgeon: Automated Fixes
+
+Let PyDoctor perform the heavy lifting. It will offer to install missing packages, upgrade outdated ones, and clean up your environment.
 
 ```bash
-# Have PyDoctor automatically attempt to resolve issues
 pydoctor fix
-
-# Run without prompting for confirmation
-pydoctor fix --no-safe
 ```
 
-### JSON Output (CI/CD)
-
-```bash
-pydoctor diagnose --json > report.json
-```
+> [!TIP]
+> Use `pydoctor fix --no-safe` in local development to apply all fixes without confirmation prompts.
 
 ---
 
 ## ⚙️ Configuration
 
-PyDoctor is zero-config by default, but you can customize its behavior in your `pyproject.toml` file:
+PyDoctor works out of the box with zero configuration. For advanced control, add a `[tool.pydoctor]` section to your `pyproject.toml`:
 
 ```toml
 [tool.pydoctor]
 # Packages to ignore during unused dependency scanning
-ignored_packages = ["setuptools", "wheel"]
+ignored_packages = ["ruff", "mypy", "pytest"]
 
 # Minimum health score required for CI to pass (0-100)
 min_health_score = 80
@@ -106,45 +120,54 @@ min_health_score = 80
 
 ## 🔬 Architecture
 
-PyDoctor is designed with a **clean, modular architecture** making it easy to mock, test, and extend.
+PyDoctor is built with a clean, modular engine designed for extensibility.
 
-```text
-pydoctor/
-├── cli/          # Handlers for Typer CLI commands
-├── core/         # Core engine (Analyzer, ProjectContext, Report)
-├── scanners/     # Diagnostic modules (Env, Security, Unused, etc.)
-├── reports/      # Formatting logic (Terminal + JSON)
-├── cache/        # Local JSON cache for security API calls
-└── utils/        # Shared pip, subprocess, and AST helpers
+```mermaid
+graph TD
+    CLI[CLI Interface] --> Engine[Core Engine]
+    Engine --> Context[Project Context]
+    Context --> Env[Env Scanner]
+    Context --> Dep[Dep Scanner]
+    Context --> Sec[Security Scanner]
+    Context --> Unused[Unused Scanner]
+    Env & Dep & Sec & Unused --> Report[Diagnosis Report]
+    Report --> Output[Terminal / JSON]
 ```
 
-Each scanner takes a snapshot `ProjectContext` and yields standard `Issue` dataclasses which are aggregated by the engine.
+<details>
+<summary>📂 Project Structure</summary>
+
+- `pydoctor/cli/`: Typer command handlers.
+- `pydoctor/core/`: The "Heart" (Analyzer, Context, logic).
+- `pydoctor/scanners/`: Individual diagnostic modules.
+- `pydoctor/reports/`: Visual and JSON formatting.
+- `pydoctor/utils/`: High-performance pip, subprocess, and AST helpers.
+</details>
 
 ---
 
 ## 🛠️ Development Setup
 
-Using `pyproject.toml` definition:
+We welcome contributions! Setting up the environment is simple:
 
 ```bash
 git clone https://github.com/iamAgbaCoder/pydoctor-cli.git
 cd pydoctor-cli
 
-# Create a virtual environment
 python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-
-# Install in editable mode with dev dependencies
+# Activate venv, then:
 pip install -e ".[dev]"
 
-# Run tests
+# Verify with tests
 pytest
-
-# Run type checker and linter
-mypy pydoctor
-ruff check pydoctor
 ```
 
-## 📜 License
+---
 
-[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+<div align="center">
+
+Developed with ❤️ by [Favour Bamgboye](https://iamagbacoder.github.io)
+
+[Apache License 2.0](LICENSE)
+
+</div>
