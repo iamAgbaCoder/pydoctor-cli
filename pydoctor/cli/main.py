@@ -201,9 +201,30 @@ def _output(
         render_report(report, verbose=verbose)
 
 
-def _exit_code(report: DiagnosisReport) -> int:
-    """Return a non-zero exit code if any errors / criticals were found."""
-    return 1 if report.has_errors else 0
+def _exit_code(report: DiagnosisReport, path: str = ".") -> int:
+    """
+    Return a non-zero exit code if:
+    1. Any CRITICAL or ERROR severity issues were found.
+    2. The project health score is below the configured threshold.
+    """
+    if report.has_errors:
+        return 1
+
+    try:
+        from pydoctor.analysis.health_score import calculate_health
+        from pydoctor.core.project import ProjectContext
+
+        ctx = ProjectContext.from_path(path)
+        threshold = ctx.config.get("min_health_score", 0)
+
+        if threshold > 0:
+            metrics = calculate_health(report)
+            if metrics.score < threshold:
+                return 1
+    except Exception:
+        pass
+
+    return 0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -237,7 +258,7 @@ def diagnose(
     if verbose and not json:
         _render_verbose_details(report)
 
-    raise typer.Exit(code=_exit_code(report))
+    raise typer.Exit(code=_exit_code(report, path))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -258,7 +279,7 @@ def check_env(
         scanners=["environment"], path=path, verbose=verbose, as_json=json
     )
     _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report))
+    raise typer.Exit(code=_exit_code(report, path))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -279,7 +300,7 @@ def scan_deps(
         scanners=["dependencies"], path=path, verbose=verbose, as_json=json
     )
     _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report))
+    raise typer.Exit(code=_exit_code(report, path))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -305,7 +326,7 @@ def scan_security(
         as_json=json,
     )
     _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report))
+    raise typer.Exit(code=_exit_code(report, path))
 
 
 # ──────────────────────────────────────────────────────────────
@@ -324,7 +345,7 @@ def scan_unused(
     """
     report = _run_scan(scanners=["unused"], path=path, verbose=verbose, as_json=json)
     _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report))
+    raise typer.Exit(code=_exit_code(report, path))
 
 
 # ──────────────────────────────────────────────────────────────

@@ -1,10 +1,16 @@
-name: PyDoctor CLI CI
+name: PyDoctor CLI - CI/CD
 
 on:
   push:
-    branches: [release]
+    branches: [main, release]
+    tags: ["v*"]
   pull_request:
-    branches: [release]
+    branches: [main, release]
+
+# Grant permissions for the publisher
+permissions:
+  contents: read
+  id-token: write # Required for OIDC / Trusted Publishing
 
 jobs:
   test:
@@ -30,40 +36,67 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Lint with Ruff
-        run: ruff check pydoctor
+      - name: Lint and Format Check
+        run: |
+          ruff check pydoctor
+          # black --check pydoctor tests
 
-      - name: Type check with Mypy
+      - name: Type Check (Mypy)
         run: mypy pydoctor
 
-      - name: Run tests with Pytest
+      - name: Run Tests (Pytest)
         run: pytest --cov=pydoctor --cov-report=xml
+
+      - name: PyDoctor Self-Diagnosis
+        # We run pydoctor on itself to ensure it's healthy
+        run: python -m pydoctor.cli.main diagnose
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  publish:
-    name: Publish to PyPI
+  deploy-testpypi:
+    name: Deploy to TestPyPI
     needs: test
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/pydoctor-cli
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install build tools
-        run: pip install build twine
-      - name: Build package
-        run: python -m build
+      - name: Build Package
+        run: |
+          pip install build
+          python -m build
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  deploy-pypi:
+    name: Deploy to Production PyPI
+    needs: test
+    # Run only on pushes to release branch or new semantic tags
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://pypi.org/p/pydoctor-cli
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build Package
+        run: |
+          pip install build
+          python -m build
       - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload dist/*
+        uses: pypa/gh-action-pypi-publish@release/v1
