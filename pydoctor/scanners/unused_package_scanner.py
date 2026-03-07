@@ -60,6 +60,7 @@ def scan(ctx: ProjectContext) -> list[Issue]:
                 severity=Severity.OK,
                 title="No unused packages detected",
                 description="All declared dependencies appear to be imported.",
+                recommendation="",
             )
         ]
 
@@ -97,6 +98,7 @@ def _check_preconditions(ctx: ProjectContext) -> list[Issue]:
                 severity=Severity.INFO,
                 title="No Python source files found",
                 description="No .py files were found to scan.",
+                recommendation="Check the directory path.",
             )
         ]
     return []
