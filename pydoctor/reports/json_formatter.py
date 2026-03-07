@@ -52,6 +52,23 @@ def render_json(
     """
     data = report.to_dict()
 
+    # Special case: map purely security outputs to simple output
+    categories = {i.category for i in report.issues}
+    if categories == {"security"}:
+        vulns = []
+        for issue in report.issues:
+            if issue.severity in ("ok", "info"):
+                continue
+            vulns.append(
+                {
+                    "package": issue.package,
+                    "version": issue.extra.get("version", "unknown"),
+                    "advisory": issue.code,
+                    "severity": issue.severity,
+                }
+            )
+        data = {"scan_type": "security", "vulnerabilities": vulns}
+
     json_str = json.dumps(
         data,
         indent=indent if pretty else None,

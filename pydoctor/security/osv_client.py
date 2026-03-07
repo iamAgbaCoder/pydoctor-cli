@@ -67,7 +67,7 @@ class VulnerabilityRecord:
 
     def to_dict(self) -> dict:
         return {
-            "id": self.vuln_id,
+            "vuln_id": self.vuln_id,
             "package": self.package,
             "version": self.version,
             "summary": self.summary,

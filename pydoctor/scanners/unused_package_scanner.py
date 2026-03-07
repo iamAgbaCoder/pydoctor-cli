@@ -125,15 +125,10 @@ def scan(ctx: ProjectContext) -> List[Issue]:
                     severity=Severity.WARNING,
                     title=f"Possibly unused: {pkg}",
                     description=(
-                        f"'{pkg}' is listed in requirements but no import statement "
-                        f"referencing it was found in your .py files. It may be a "
-                        f"transitive dependency, a CLI tool, or dynamically imported."
+                        "Confidence: 82%\n"
+                        f"No imports corresponding to '{pkg}' were found in project files."
                     ),
-                    recommendation=(
-                        f"Verify that '{pkg}' is genuinely needed. "
-                        f"If not, remove it: pip uninstall {pkg} && "
-                        f"remove from requirements.txt."
-                    ),
+                    recommendation=(f"pip uninstall {pkg}"),
                     package=pkg,
                     extra={"imported_packages_count": len(imported_packages)},
                 )

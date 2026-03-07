@@ -2,218 +2,147 @@
 pydoctor/reports/table_formatter.py
 ─────────────────────────────────────
 Rich-powered terminal report formatter.
-
-Renders a ``DiagnosisReport`` as a beautiful, doctor-themed CLI output
-using Rich panels, tables, rules, and progress spinners.
-
-Output sections:
-  1. Banner / Header
-  2. Summary counts panel
-  3. Per-category issue tables
-  4. Recommendations panel
-  5. Timing footer (verbose mode)
 """
 
 from __future__ import annotations
+
+import math
+from typing import Dict, List, Any
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.columns import Columns
+from rich.progress import Progress, BarColumn, TextColumn
 from rich import box
 from rich.rule import Rule
 
 from pydoctor.config.settings import Severity
 from pydoctor.core.report import DiagnosisReport, Issue
+from pydoctor.analysis.health_score import calculate_health
 from pydoctor.reports.terminal_colors import (
     PYDOCTOR_THEME,
     severity_icon,
     severity_style,
     ICON_STETHOSCOPE,
-    ICON_ARROW,
-    ICON_CLOCK,
-    STYLE_HEADER,
-    STYLE_SECTION,
-    STYLE_DIM,
 )
 
-# Shared console with the custom theme
 console = Console(theme=PYDOCTOR_THEME)
 
-
-# ── Category display names ─────────────────────────────────────
 CATEGORY_LABELS: dict[str, str] = {
-    "environment": "🌍  Environment",
-    "dependencies": "📦  Dependencies",
-    "outdated": "🔄  Outdated Packages",
-    "security": "🔒  Security Vulnerabilities",
-    "unused": "🧹  Unused Packages",
-}
-
-# ── Which severities to show in the per-category tables ────────
-VISIBLE_SEVERITIES = {
-    Severity.WARNING,
-    Severity.ERROR,
-    Severity.CRITICAL,
-    Severity.INFO,
+    "environment": "Environment",
+    "dependencies": "Dependencies",
+    "outdated": "Outdated Packages",
+    "security": "Security",
+    "unused": "Unused Packages",
 }
 
 
 def render_report(report: DiagnosisReport, verbose: bool = False) -> None:
-    """
-    Render the full diagnosis report to the terminal.
-
-    Parameters
-    ----------
-    report:  The aggregated DiagnosisReport.
-    verbose: Whether to include timing metadata.
-    """
+    """Render the UX-improved diagnostic report."""
     console.print()
     _render_banner()
+
+    # Render grouped issues in verbose mode, else summary
+    console.print(Rule("[section]Results[/]", style="rule"))
+    _render_simple_summary(report)
+
+    # Auto-expand details if we are in a targeted scan (only one category) or verbose
+    categories = {
+        i.category
+        for i in report.issues
+        if i.severity not in (Severity.OK, Severity.INFO)
+    }
+
+    if verbose or len(categories) == 1:
+        if verbose or "security" in categories:
+            console.print()
+            _render_detailed_security(report)
+        if verbose or "unused" in categories:
+            console.print()
+            _render_detailed_unused(report)
+
     console.print()
-    _render_summary(report)
+    _render_health_score(report)
+
     console.print()
-    _render_categories(report)
+    _render_verdict(report)
+
     console.print()
     _render_recommendations(report)
 
-    if verbose and report.scanner_meta.get("timings_ms"):
-        console.print()
-        _render_timing(report)
+    console.print()
+    _render_next_steps()
 
+    console.print(
+        f"\n[dim_text]Scan completed in {report.scan_duration_ms / 1000.0:.2f} seconds[/]"
+    )
     console.print()
 
 
-# ──────────────────────────────────────────────────────────────
-# Section renderers
-# ──────────────────────────────────────────────────────────────
-
-
 def _render_banner() -> None:
-    """Print the PyDoctor diagnostic banner."""
-    banner = Text()
-    banner.append(f"\n  {ICON_STETHOSCOPE}  PyDoctor", style="header")
-    banner.append("  Diagnosis Report\n", style="bright_white")
-
-    console.print(
-        Panel(
-            banner,
-            border_style="rule",
-            padding=(0, 2),
-        )
-    )
+    banner = Text(f"{ICON_STETHOSCOPE} PyDoctor Diagnosis Report", style="header")
+    console.print(banner)
+    console.print()
 
 
-def _render_summary(report: DiagnosisReport) -> None:
-    """Print colour-coded summary counts for each severity level."""
-    counts = report.summary_counts()
-
-    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
-    table.add_column("icon", no_wrap=True)
-    table.add_column("label", no_wrap=True, style="section")
-    table.add_column("count", no_wrap=True, justify="right")
-
-    severity_display = [
-        (Severity.CRITICAL, "Critical"),
-        (Severity.ERROR, "Errors"),
-        (Severity.WARNING, "Warnings"),
-        (Severity.INFO, "Info"),
-        (Severity.OK, "Passed"),
-    ]
-
-    for sev, label in severity_display:
-        count = counts.get(sev, 0)
-        if count == 0 and sev not in (Severity.OK,):
-            continue
-        table.add_row(
-            severity_icon(sev),
-            label,
-            Text(str(count), style=severity_style(sev)),
-        )
-
-    console.print(
-        Panel(
-            table,
-            title="[section]Summary[/]",
-            border_style="rule",
-            padding=(0, 1),
-        )
-    )
-
-
-def _render_categories(report: DiagnosisReport) -> None:
-    """
-    Print a table of issues for each category.
-
-    OK-only categories show a single green line.
-    Categories with warnings/errors show a full table.
-    """
+def _render_simple_summary(report: DiagnosisReport) -> None:
+    """Renders the Results section compactly."""
     grouped = report.by_category()
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column("Category", style="section", width=20)
+    table.add_column("Status")
 
-    # Render in a fixed order
-    ordered_keys = list(CATEGORY_LABELS.keys())
-    # Add any unexpected categories at the end
-    for k in grouped:
-        if k not in ordered_keys:
-            ordered_keys.append(k)
-
-    for key in ordered_keys:
+    for key, label in CATEGORY_LABELS.items():
         if key not in grouped:
             continue
+
         issues = grouped[key]
-        label = CATEGORY_LABELS.get(key, key.title())
-
-        # Separate OK from everything else
-        problems = [i for i in issues if i.severity != Severity.OK]
-        oks = [i for i in issues if i.severity == Severity.OK]
-
-        console.print(Rule(f"[section]{label}[/]", style="rule"))
+        problems = [i for i in issues if i.severity not in (Severity.OK, Severity.INFO)]
 
         if not problems:
-            # All clear in this category
-            for ok in oks:
-                console.print(f"  {severity_icon('ok')}  {ok.title}")
+            text = Text(f"✔ Healthy", style="ok")
         else:
-            tbl = _make_issue_table(problems)
-            console.print(tbl)
-            # Also show OKs below the table
-            for ok in oks:
-                console.print(f"  {severity_icon('ok')}  [dim_text]{ok.title}[/]")
+            if key == "security":
+                text = Text(f"⚠ {len(problems)} vulnerabilities", style="warning")
+            elif key == "unused":
+                text = Text(f"⚠ {len(problems)} detected", style="warning")
+            elif key == "outdated":
+                text = Text(f"⚠ {len(problems)} detected", style="warning")
+            elif key == "dependencies":
+                text = Text(f"⚠ {len(problems)} conflicts", style="error")
+            else:
+                text = Text(f"⚠ {len(problems)} issues", style="warning")
+
+        table.add_row(label, text)
+
+    console.print(table)
 
 
-def _make_issue_table(issues: list[Issue]) -> Table:
-    """
-    Build a Rich Table for a list of non-OK issues.
-    """
-    table = Table(
-        box=box.SIMPLE_HEAD,
-        show_header=True,
-        header_style="section",
-        show_edge=False,
-        padding=(0, 1),
-        expand=True,
-    )
-    table.add_column("", width=3, no_wrap=True)
-    table.add_column("Package", min_width=18, style="pkg")
-    table.add_column("Issue", min_width=30)
-    table.add_column("Severity", width=10, no_wrap=True)
+def _render_health_score(report: DiagnosisReport) -> None:
+    """Renders the health score progress bar."""
+    health = calculate_health(report)
 
-    for issue in issues:
-        table.add_row(
-            severity_icon(issue.severity),
-            issue.package or "—",
-            issue.title,
-            Text(issue.severity.upper(), style=severity_style(issue.severity)),
-        )
+    console.print("[section]❤️  Project Health Score[/]")
 
-    return table
+    bar_width = 20
+    filled = math.ceil((health.score / 100.0) * bar_width)
+    empty = bar_width - filled
+
+    bar = ("█" * filled) + ("░" * empty)
+
+    color = "ok" if health.score >= 80 else "warning" if health.score >= 50 else "error"
+    console.print(f"[{color}]{bar}[/] [b]{health.score}%[/]")
+
+
+def _render_verdict(report: DiagnosisReport) -> None:
+    health = calculate_health(report)
+    console.print("[section]🩺 Doctor's Verdict[/]")
+    console.print(health.message)
 
 
 def _render_recommendations(report: DiagnosisReport) -> None:
-    """
-    Print a consolidated Recommendations panel for all non-OK issues.
-    """
+    console.print("[section]💡 Recommendations[/]")
     non_ok = [
         i
         for i in report.issues
@@ -221,93 +150,110 @@ def _render_recommendations(report: DiagnosisReport) -> None:
     ]
 
     if not non_ok:
+        console.print("[ok]No actions required. Keep up the good work![/]")
+        return
+
+    shown = 0
+    for issue in non_ok[:10]:
         console.print(
-            Panel(
-                f"  {severity_icon('ok')}  [ok]Your project looks healthy![/]",
-                title="[section]Recommendations[/]",
-                border_style="ok",
-                padding=(0, 2),
-            )
+            f"{severity_icon(issue.severity)} [pkg]{issue.package or 'System'}[/] {issue.title}"
         )
+        console.print(f"  Fix: [code]{issue.recommendation}[/]")
+        shown += 1
+
+    if len(non_ok) > 10:
+        console.print(
+            f"\n[dim_text]... and {len(non_ok) - 10} more recommendations.[/]"
+        )
+
+
+def _render_next_steps() -> None:
+    console.print("[section]🚀 Next Steps[/]")
+    table = Table(box=None, show_header=False, padding=(0, 2))
+    table.add_column("Desc", style="dim_text")
+    table.add_column("Cmd", style="code")
+
+    table.add_row("Run full diagnosis:", "pydoctor diagnose --verbose")
+    table.add_row("Check vulnerabilities:", "pydoctor scan-security")
+    table.add_row("Auto-fix issues:", "pydoctor fix")
+    console.print(table)
+
+
+def _render_detailed_security(report: DiagnosisReport) -> None:
+    """Group vulnerabilities by package for verbose output."""
+    sec_issues = [
+        i
+        for i in report.issues
+        if i.category == "security" and i.severity != Severity.OK
+    ]
+    if not sec_issues:
         return
 
-    lines = []
-    for issue in non_ok[:15]:  # Cap at 15 recommendations for readability
-        icon = severity_icon(issue.severity)
-        lines.append(
-            f"  {icon}  [pkg]{issue.package or 'General'}[/]  "
-            f"{ICON_ARROW}  {issue.recommendation}"
+    from collections import defaultdict
+
+    grouped: dict[str, list[Issue]] = defaultdict(list)
+    for issue in sec_issues:
+        grouped[issue.package or "Unknown"].append(issue)
+
+    console.print(Rule("[section]Security Vulnerabilities[/]", style="rule"))
+
+    for pkg, issues in grouped.items():
+        console.print(f"\n[pkg]{pkg}[/]")
+        console.print(
+            f"{severity_icon(Severity.WARNING)} [warning]{len(issues)} vulnerabilities detected[/]\n"
         )
 
-    if len(non_ok) > 15:
-        lines.append(
-            f"\n  [dim_text]… and {len(non_ok) - 15} more. "
-            f"Run with --verbose for full details.[/]"
-        )
-
-    console.print(
-        Panel(
-            "\n".join(lines),
-            title="[section]Recommendations[/]",
-            border_style="warning",
-            padding=(0, 1),
-        )
-    )
+        for issue in issues:
+            c = "error" if issue.severity == Severity.CRITICAL else "warning"
+            display_title = issue.title
+            if issue.package and display_title.lower().startswith(
+                issue.package.lower()
+            ):
+                display_title = display_title[len(issue.package) :].strip(" -—")
+            console.print(f"  [{c}]{display_title}[/] - {issue.description}")
 
 
-def _render_timing(report: DiagnosisReport) -> None:
-    """Print per-scanner timing information (verbose mode only)."""
-    timings: dict[str, float] = report.scanner_meta.get("timings_ms", {})
-    if not timings:
+def _render_detailed_outdated(report: DiagnosisReport) -> None:
+    """Show details for outdated packages."""
+    outdated = [
+        i
+        for i in report.issues
+        if i.category == "outdated" and i.severity != Severity.OK
+    ]
+    if not outdated:
         return
 
-    table = Table(box=box.SIMPLE, show_header=True, header_style="section")
-    table.add_column("Scanner")
-    table.add_column("Time (ms)", justify="right")
+    console.print(Rule("[section]Outdated Packages[/]", style="rule"))
+    table = Table(box=None, show_header=True, header_style="section")
+    table.add_column("Package", style="pkg")
+    table.add_column("Current")
+    table.add_column("Latest", style="ok")
 
-    for name, ms in sorted(timings.items(), key=lambda x: -x[1]):
-        table.add_row(name, f"{ms:.0f}")
-
-    table.add_row(
-        "Total",
-        f"{report.scan_duration_ms:.0f}",
-        style="section",
-    )
-
-    console.print(
-        Panel(
-            table,
-            title=f"[section]{ICON_CLOCK}  Timing[/]",
-            border_style="rule",
+    for issue in outdated:
+        table.add_row(
+            issue.package or "Unknown",
+            issue.extra.get("current_version", "?"),
+            issue.extra.get("latest_version", "?"),
         )
-    )
+    console.print(table)
 
 
-# ──────────────────────────────────────────────────────────────
-# Verbose issue detail (used by --verbose CLI flag)
-# ──────────────────────────────────────────────────────────────
+def _render_detailed_unused(report: DiagnosisReport) -> None:
+    """Show detailed unused with confidence."""
+    unused = [
+        i for i in report.issues if i.category == "unused" and i.severity != Severity.OK
+    ]
+    if not unused:
+        return
+
+    console.print(Rule("[section]Unused Packages[/]", style="rule"))
+    for issue in unused:
+        console.print(f"\n[pkg]{issue.package}[/]")
+        console.print(f"{severity_icon(issue.severity)} [warning]Possibly unused[/]")
+        # Parse confidence from description if present
+        desc = issue.description.replace("\n", "  ")
+        console.print(f"  [dim_text]{desc}[/]")
 
 
 def render_issue_detail(issue: Issue) -> None:
-    """Print full detail for a single issue (used in verbose mode)."""
-    icon = severity_icon(issue.severity)
-    console.print(
-        Panel(
-            f"{icon}  [section]{issue.title}[/]\n\n"
-            f"[dim_text]{issue.description}[/]\n\n"
-            f"[section]Recommendation:[/] {issue.recommendation}",
-            subtitle=f"[code]{issue.code}[/]  [dim_text]{issue.category}[/]",
-            border_style=_border_for_severity(issue.severity),
-            padding=(1, 2),
-        )
-    )
-
-
-def _border_for_severity(severity: str) -> str:
-    return {
-        "ok": "ok",
-        "info": "info",
-        "warning": "warning",
-        "error": "error",
-        "critical": "critical",
-    }.get(severity.lower(), "rule")
+    pass

@@ -76,7 +76,7 @@ class Analyzer:
 
     # ── Public API ─────────────────────────────────────────────
 
-    def run(self) -> DiagnosisReport:
+    def run(self, on_progress: Callable[[str], None] | None = None) -> DiagnosisReport:
         """
         Execute the full diagnostic scan and return a ``DiagnosisReport``.
 
@@ -92,10 +92,7 @@ class Analyzer:
 
         # Build project context once — shared across all scanners
         ctx = ProjectContext.from_path(self._project_path)
-
         report = DiagnosisReport(scan_path=str(ctx.root))
-
-        # Run selected scanners, collecting their issues
         scanner_timings: dict[str, float] = {}
 
         # Parallel execution for independence (each scanner gets its own thread)
@@ -113,6 +110,8 @@ class Analyzer:
             for future in as_completed(future_map):
                 key = future_map[future]
                 try:
+                    if on_progress:
+                        on_progress(key)
                     issues, elapsed_ms = future.result()
                     report.extend(issues)
                     scanner_timings[key] = round(elapsed_ms, 2)

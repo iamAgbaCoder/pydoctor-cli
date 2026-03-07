@@ -51,7 +51,12 @@ from rich.prompt import Confirm
 from pydoctor import __version__
 from pydoctor.core.analyzer import Analyzer, SCANNER_REGISTRY
 from pydoctor.core.report import DiagnosisReport
-from pydoctor.reports.table_formatter import render_report, render_issue_detail, console
+from pydoctor.reports.table_formatter import (
+    render_report,
+    render_issue_detail,
+    console,
+    CATEGORY_LABELS,
+)
 from pydoctor.reports.json_formatter import render_json
 from pydoctor.cache.cache_manager import CacheManager
 from pydoctor.config.settings import Severity, PYDOCTOR_HOME
@@ -122,29 +127,39 @@ def _run_scan(
     path: str = ".",
     verbose: bool = False,
     no_cache: bool = False,
+    as_json: bool = False,
 ) -> DiagnosisReport:
-    """
-    Run the Analyzer with a Rich progress spinner and return the report.
-    """
+    """Run the Analyzer with Rich progress indicators."""
     if no_cache:
-        # Clear cache before scan so fresh network data is fetched
         CacheManager().clear()
 
+    if not verbose and not as_json:
+        console.print("[section]Scanning project...[/]")
+
+    def progress_callback(key: str) -> None:
+        if not as_json:
+            label = CATEGORY_LABELS.get(key, key.title())
+            console.print(f"[ok]✔[/] Checking {label.lower().replace(' ', ' ')}")
+
+    if as_json:
+        # Avoid overriding stdout when generating JSON
+        analyzer = Analyzer(project_path=path, scanners=scanners, verbose=verbose)
+        return analyzer.run(on_progress=None)
+
     with Progress(
-        SpinnerColumn("dots"),
+        SpinnerColumn("dots", style="bright_cyan"),
         TextColumn("[bright_cyan]{task.description}"),
         TimeElapsedColumn(),
         console=console,
         transient=True,
     ) as progress:
-        task = progress.add_task("🩺  Diagnosing your project …", total=None)
+        task = progress.add_task("🩺 PyDoctor scanning project...", total=None)
         analyzer = Analyzer(
             project_path=path,
             scanners=scanners,
             verbose=verbose,
         )
-        report = analyzer.run()
-        progress.update(task, description="✔  Scan complete")
+        report = analyzer.run(on_progress=progress_callback if not verbose else None)
 
     return report
 
@@ -191,7 +206,7 @@ def diagnose(
     pydoctor diagnose --json\n
     pydoctor diagnose --verbose\n
     """
-    report = _run_scan(path=path, verbose=verbose, no_cache=no_cache)
+    report = _run_scan(path=path, verbose=verbose, no_cache=no_cache, as_json=json)
     _output(report, as_json=json, verbose=verbose)
 
     if verbose and not json:
@@ -214,7 +229,9 @@ def check_env(
     """
     🌍  Check the Python **environment** (version, venv, pip).
     """
-    report = _run_scan(scanners=["environment"], path=path, verbose=verbose)
+    report = _run_scan(
+        scanners=["environment"], path=path, verbose=verbose, as_json=json
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report))
 
@@ -233,7 +250,9 @@ def scan_deps(
     """
     📦  Scan for **dependency conflicts** and missing packages.
     """
-    report = _run_scan(scanners=["dependencies"], path=path, verbose=verbose)
+    report = _run_scan(
+        scanners=["dependencies"], path=path, verbose=verbose, as_json=json
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report))
 
@@ -258,6 +277,7 @@ def scan_security(
         path=path,
         verbose=verbose,
         no_cache=no_cache,
+        as_json=json,
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report))
@@ -277,7 +297,7 @@ def scan_unused(
     """
     🧹  Detect **unused packages** via AST import analysis.
     """
-    report = _run_scan(scanners=["unused"], path=path, verbose=verbose)
+    report = _run_scan(scanners=["unused"], path=path, verbose=verbose, as_json=json)
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report))
 
@@ -297,7 +317,7 @@ def report(
     """
     📋  Generate a **full diagnosis report** (alias for diagnose).
     """
-    report_data = _run_scan(path=path, verbose=verbose, no_cache=no_cache)
+    report_data = _run_scan(path=path, verbose=verbose, no_cache=no_cache, as_json=json)
     _output(report_data, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report_data))
 
@@ -309,6 +329,9 @@ def report(
 
 @app.command()
 def fix(
+    packages: Optional[List[str]] = typer.Argument(
+        None, help="Specific packages to fix (optional)."
+    ),
     path: str = _PATH_OPT,
     safe: bool = typer.Option(
         True,
@@ -347,6 +370,49 @@ def fix(
     report_data = _run_scan(path=path)
     actions_taken = 0
 
+    # Filter issues if specific packages were provided
+    if packages:
+        # Normalize package names for matching
+        targets = {p.lower() for p in packages}
+        report_data.issues = [
+            i for i in report_data.issues if i.package and i.package.lower() in targets
+        ]
+        if not report_data.issues:
+            console.print(
+                f"\n[warning]No fixable issues found for packages: {', '.join(packages)}[/]"
+            )
+            raise typer.Exit()
+
+    # ── Upgrade vulnerable packages ────────────────────────────
+    vulnerable = [i for i in report_data.issues if i.category == "security"]
+    if vulnerable:
+        console.print(
+            f"\n[section]Found {len(vulnerable)} security vulnerabilities to fix:[/]"
+        )
+        # Group by package to avoid multiple upgrades for same package
+        vulnerable_pkgs = {}
+        for i in vulnerable:
+            if i.package:
+                vulnerable_pkgs[i.package] = i
+
+        for pkg, issue in vulnerable_pkgs.items():
+            if safe:
+                ok = Confirm.ask(f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?")
+                if not ok:
+                    continue
+
+            console.print(f"  [dim_text]Running: pip install --upgrade {pkg}[/]")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", pkg],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                console.print(f"  [ok]✔  {pkg} upgraded successfully.[/]")
+                actions_taken += 1
+            else:
+                err_console.print(f"  [error]✖  Failed to fix {pkg}[/]")
+
     # ── Upgrade outdated packages ──────────────────────────────
     if upgrade:
         outdated = [i for i in report_data.issues if i.code == "PKG_OUTDATED"]
@@ -356,6 +422,12 @@ def fix(
             )
             for issue in outdated:
                 pkg = issue.package or issue.extra.get("name", "")
+                if not pkg:
+                    continue
+                # Skip if already handled in vulnerability upgrade
+                if pkg in vulnerable:
+                    continue
+
                 latest = issue.extra.get("latest_version", "latest")
 
                 if safe:
@@ -373,14 +445,17 @@ def fix(
                     console.print(f"  [ok]✔  {pkg} upgraded to {latest}[/]")
                     actions_taken += 1
                 else:
-                    err_console.print(
-                        f"  [error]✖  Failed to upgrade {pkg}: {result.stderr.strip()[:100]}[/]"
-                    )
+                    err_console.print(f"  [error]✖  Failed to upgrade {pkg}[/]")
         else:
-            console.print("[ok]✔  No outdated packages to upgrade.[/]")
+            if (
+                not packages
+            ):  # Only show "No outdated" if we aren't targeting specific pkgs
+                console.print("[ok]✔  No outdated packages to upgrade.[/]")
 
     # ── Remove unused packages ─────────────────────────────────
-    if remove:
+    if (
+        remove or packages
+    ):  # If specific packages are targeted, we try to remove if they are unused
         unused = [i for i in report_data.issues if i.code == "UNUSED_PACKAGE"]
         if unused:
             console.print(
