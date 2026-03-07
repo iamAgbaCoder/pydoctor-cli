@@ -139,12 +139,8 @@ err_console = Console(stderr=True, theme=PYDOCTOR_THEME)
 
 _PATH_OPT = typer.Option(".", "--path", "-p", help="Project directory to scan.")
 _JSON_FLAG = typer.Option(False, "--json", "-j", help="Output results as JSON.")
-_VERBOSE_FLAG = typer.Option(
-    False, "--verbose", "-v", help="Show detailed output and timing."
-)
-_NO_CACHE = typer.Option(
-    False, "--no-cache", help="Bypass the local vulnerability cache."
-)
+_VERBOSE_FLAG = typer.Option(False, "--verbose", "-v", help="Show detailed output and timing.")
+_NO_CACHE = typer.Option(False, "--no-cache", help="Bypass the local vulnerability cache.")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -280,9 +276,7 @@ def check_env(
     """
     🌍  Check the Python **environment** (version, venv, pip).
     """
-    report = _run_scan(
-        scanners=["environment"], path=path, verbose=verbose, as_json=json
-    )
+    report = _run_scan(scanners=["environment"], path=path, verbose=verbose, as_json=json)
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
 
@@ -301,9 +295,7 @@ def scan_deps(
     """
     📦  Scan for **dependency conflicts** and missing packages.
     """
-    report = _run_scan(
-        scanners=["dependencies"], path=path, verbose=verbose, as_json=json
-    )
+    report = _run_scan(scanners=["dependencies"], path=path, verbose=verbose, as_json=json)
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
 
@@ -389,12 +381,8 @@ def fix(
         "--safe/--no-safe",
         help="Safe mode asks for confirmation before each action (default: on).",
     ),
-    upgrade: bool = typer.Option(
-        True, "--upgrade/--no-upgrade", help="Upgrade outdated packages."
-    ),
-    remove: bool = typer.Option(
-        False, "--remove/--no-remove", help="Remove unused packages."
-    ),
+    upgrade: bool = typer.Option(True, "--upgrade/--no-upgrade", help="Upgrade outdated packages."),
+    remove: bool = typer.Option(False, "--remove/--no-remove", help="Remove unused packages."),
 ) -> None:
     """
     🔧  Apply **automated fixes** to common issues.
@@ -430,17 +418,13 @@ def fix(
     _render_fix_summary(actions)
 
 
-def _filter_issues_by_targets(
-    report_data: DiagnosisReport, packages: list[str]
-) -> None:
+def _filter_issues_by_targets(report_data: DiagnosisReport, packages: list[str]) -> None:
     targets = {p.lower() for p in packages}
     report_data.issues = [
         i for i in report_data.issues if i.package and i.package.lower() in targets
     ]
     if not report_data.issues:
-        console.print(
-            f"\n[warning]No fixable issues found for packages: {', '.join(packages)}[/]"
-        )
+        console.print(f"\n[warning]No fixable issues found for packages: {', '.join(packages)}[/]")
         raise typer.Exit()
 
 
@@ -513,36 +497,26 @@ def _update_pip_requirements(
         return
 
     if action == "remove":
-        if not safe or Confirm.ask(
-            f"  Remove [pkg]{pkg}[/] from [code]requirements.txt[/]?"
-        ):
+        if not safe or Confirm.ask(f"  Remove [pkg]{pkg}[/] from [code]requirements.txt[/]?"):
             remove_from_requirements_file(req_file, pkg)
     elif action == "update":
-        if not safe or Confirm.ask(
-            f"  Update [code]requirements.txt[/] for [pkg]{pkg}[/]?"
-        ):
+        if not safe or Confirm.ask(f"  Update [code]requirements.txt[/] for [pkg]{pkg}[/]?"):
             update_requirements_file(req_file, pkg, version_spec)
     elif action == "add":
         _add_package_to_requirements(req_file, pkg, safe)
 
 
-def _fix_vulnerabilities(
-    report: DiagnosisReport, ctx: ProjectContext, safe: bool
-) -> int:
+def _fix_vulnerabilities(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
     vulnerable = [i for i in report.issues if i.code == "SEC_VULNERABILITY"]
     if not vulnerable:
         return 0
 
-    console.print(
-        f"\n[section]Found {len(vulnerable)} security vulnerabilities to fix:[/]"
-    )
+    console.print(f"\n[section]Found {len(vulnerable)} security vulnerabilities to fix:[/]")
     vulnerable_pkgs = {i.package: i for i in vulnerable if i.package}
     actions = 0
 
     for pkg in vulnerable_pkgs:
-        if safe and not Confirm.ask(
-            f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?"
-        ):
+        if safe and not Confirm.ask(f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?"):
             continue
 
         result = _run_package_manager_command(ctx, pkg, "add", upgrade=True)
@@ -559,9 +533,7 @@ def _fix_outdated(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> i
     if not outdated:
         return 0
 
-    console.print(
-        f"\n[section]Found {len(outdated)} outdated package(s) to upgrade:[/]"
-    )
+    console.print(f"\n[section]Found {len(outdated)} outdated package(s) to upgrade:[/]")
     actions = 0
 
     for issue in outdated:
@@ -586,8 +558,7 @@ def _fix_dependencies(report: DiagnosisReport, ctx: ProjectContext, safe: bool) 
     conflicts = [
         i
         for i in report.issues
-        if i.category == "dependencies"
-        and i.code in ("DEP_MISSING", "DEP_VERSION_CONFLICT")
+        if i.category == "dependencies" and i.code in ("DEP_MISSING", "DEP_VERSION_CONFLICT")
     ]
     if not conflicts:
         return 0
@@ -668,9 +639,7 @@ def _render_fix_summary(actions: int) -> None:
     console.print()
     if actions:
         console.print(
-            Panel(
-                f"[ok]✔  {actions} fix(es) applied successfully.[/]", border_style="ok"
-            )
+            Panel(f"[ok]✔  {actions} fix(es) applied successfully.[/]", border_style="ok")
         )
     else:
         console.print(Panel("[dim_text]No fixes were applied.[/]", border_style="rule"))
@@ -695,9 +664,7 @@ def cache_clear() -> None:
 def cache_purge() -> None:
     """🧹  Purge only expired cache entries."""
     removed = CacheManager().purge_expired()
-    console.print(
-        f"[ok]✔  Purged {removed} expired cache entr{'y' if removed==1 else 'ies'}.[/]"
-    )
+    console.print(f"[ok]✔  Purged {removed} expired cache entr{'y' if removed==1 else 'ies'}.[/]")
 
 
 @cache_app.command("info")
@@ -733,9 +700,7 @@ def _render_verbose_details(report: DiagnosisReport) -> None:
     """
     In verbose mode, print a full detail panel for every non-OK issue.
     """
-    non_ok = [
-        i for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)
-    ]
+    non_ok = [i for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)]
     if not non_ok:
         return
     console.print("\n[section]Detailed Issue Breakdown[/]\n")
