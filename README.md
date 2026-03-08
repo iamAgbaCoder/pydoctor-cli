@@ -74,12 +74,16 @@ pydoctor fix
 
 ## 📜 Release History
 
-### v0.1.2
+### v0.1.3
 
 - **Enhanced Package Detection**: Pydoctor now intelligently detects and uses your project's specific virtual environment (Poetry, UV, PDM, or standard venv) to run all scans and diagnoses.
-- **Professional Repro Overhaul**: Revamped `pyproject.toml` with complete author metadata, maintainers, and SEO keywords.
-- **Improved UX**: Simplified README and removed non-standard Markdown (Mermaid) for perfect PyPI rendering.
-- **CI Safety**: Added `skip-existing` protection to prevent environment-breaking upload failures.
+- **Improved Architecture**: Refactored core modules to reduce complexity and improve maintainability (resolved C901 linting errors).
+- **Fix Rendering Errors**: Resolved issues with undefined verbose detail renderers in the CLI.
+
+### v0.1.2
+
+- **Maintenance**: Minor internal fixes and linting improvements for CI/CD stability.
+- **Professional Meta**: Revamped `pyproject.toml` with complete author metadata and SEO keywords.
 
 ### v0.1.1
 

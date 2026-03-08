@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from pydoctor.utils.file_utils import collect_python_files
-from pydoctor.utils.pip_utils import get_installed_packages, parse_requirements_file
+from pydoctor.utils.pip_utils import parse_requirements_file
 
 
 @dataclass
@@ -102,9 +102,22 @@ class ProjectContext:
     @classmethod
     def _find_project_python(cls, root: Path, meta: dict) -> str:
         """Find the Python interpreter for the project."""
-        import subprocess
-
         # 1. Check for common venv names
+        venv_py = cls._find_venv_python(root)
+        if venv_py:
+            return venv_py
+
+        # 2. Check package managers
+        mgr_py = cls._find_manager_python(root, meta)
+        if mgr_py:
+            return mgr_py
+
+        # 3. Fallback to current interpreter
+        return sys.executable
+
+    @staticmethod
+    def _find_venv_python(root: Path) -> str | None:
+        """Search for standard virtualenv locations."""
         for venv_dir in [".venv", "venv", ".env", "env"]:
             if os.name == "nt":
                 py_path = root / venv_dir / "Scripts" / "python.exe"
@@ -113,19 +126,24 @@ class ProjectContext:
 
             if py_path.exists():
                 return str(py_path)
+        return None
 
-        # 2. Check package managers
+    @staticmethod
+    def _find_manager_python(root: Path, meta: dict) -> str | None:
+        """Search for interpreters managed by Poetry, PDM, etc."""
+        import subprocess
+
         try:
             if meta.get("is_poetry"):
-                result = subprocess.run(
+                res = subprocess.run(
                     ["poetry", "env", "info", "-p"],
                     capture_output=True,
                     text=True,
                     cwd=root,
                     check=False,
                 )
-                if result.returncode == 0:
-                    base = Path(result.stdout.strip())
+                if res.returncode == 0:
+                    base = Path(res.stdout.strip())
                     py = (
                         base / "bin" / "python"
                         if os.name != "nt"
@@ -134,34 +152,19 @@ class ProjectContext:
                     if py.exists():
                         return str(py)
 
-            if meta.get("is_uv"):
-                # uv typically uses .venv, already checked, but fallback
-                pass
-
             if meta.get("is_pdm"):
-                result = subprocess.run(
-                    ["pdm", "info", "--where"],
+                res = subprocess.run(
+                    ["pdm", "info", "--python"],
                     capture_output=True,
                     text=True,
                     cwd=root,
                     check=False,
                 )
-                if result.returncode == 0:
-                    # Actually pdm info has a python path
-                    result_py = subprocess.run(
-                        ["pdm", "info", "--python"],
-                        capture_output=True,
-                        text=True,
-                        cwd=root,
-                        check=False,
-                    )
-                    if result_py.returncode == 0:
-                        return result_py.stdout.strip()
+                if res.returncode == 0:
+                    return res.stdout.strip()
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
-
-        # 3. Fallback to current interpreter
-        return sys.executable
+        return None
 
     @staticmethod
     def _parse_dependencies(root: Path) -> dict[str, str]:

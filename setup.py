@@ -1,3 +1,62 @@
 import setuptools
 
-setuptools.setup()
+setuptools.setup(
+    name="pydoctor-cli",
+    version="0.1.2",
+    packages=setuptools.find_packages(),
+    install_requires=[
+        "typer>=0.12",
+        "rich>=13",
+        "requests>=2.28",
+        "packaging>=23",
+        "pipdeptree>=2.5",
+        "tomli>=2.0; python_version < '3.11'",
+    ],
+    entry_points={
+        "console_scripts": [
+            "pydoctor = pydoctor.cli.main:main",
+        ],
+    },
+    author="Favour Bamgboye",
+    author_email="demiladebamgboye@gmail.com",
+    description="Premium Python environment diagnostic CLI — your project's personal physician.",
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
+    url="https://pydoctor.vercel.app",
+    project_urls={
+        "Homepage": "https://pydoctor.vercel.app",
+        "Repository": "https://github.com/iamAgbaCoder/pydoctor-cli",
+        "Documentation": "https://github.com/iamAgbaCoder/pydoctor-cli#readme",
+        "Bug Tracker": "https://github.com/iamAgbaCoder/pydoctor-cli/issues",
+        "Changelog": "https://github.com/iamAgbaCoder/pydoctor-cli/releases",
+    },
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "Topic :: Software Development :: Build Tools",
+        "Topic :: Software Development :: Quality Assurance",
+        "Topic :: System :: Installation/Setup",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Environment :: Console",
+        "Typing :: Typed",
+    ],
+    python_requires=">=3.10",
+    keywords=[
+        "pydoctor",
+        "diagnosis",
+        "dependency-checker",
+        "vulnerability-scanner",
+        "python-health",
+        "cli-tool",
+        "security-audit",
+        "static-analysis",
+    ],
+    license="Apache-2.0",
+)

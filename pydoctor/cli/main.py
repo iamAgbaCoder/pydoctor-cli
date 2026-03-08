@@ -58,6 +58,7 @@ from pydoctor.reports.json_formatter import render_json
 from pydoctor.reports.table_formatter import (
     CATEGORY_LABELS,
     console,
+    render_issue_detail,
     render_report,
 )
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
