@@ -21,20 +21,17 @@ from pydoctor.utils.subprocess_utils import run_pip_command
 # ──────────────────────────────────────────────────────────────
 
 
-def get_installed_packages() -> dict[str, str]:
+def get_installed_packages(python_executable: str | None = None) -> dict[str, str]:
     """
     Return a mapping of {package_name: version} for every package currently
-    installed in the active Python environment.
-
-    Uses ``pip list --format=json`` under the hood.
+    installed in the active or specified Python environment.
 
     Returns
     -------
     dict[str, str]
         Lower-cased package names mapped to their installed version strings.
-        Returns an empty dict if pip fails.
     """
-    result = run_pip_command(["list", "--format=json"])
+    result = run_pip_command(["list", "--format=json"], python_executable=python_executable)
     if result.returncode != 0:
         return {}
 
@@ -46,22 +43,18 @@ def get_installed_packages() -> dict[str, str]:
         return {}
 
 
-def get_outdated_packages() -> list[dict]:
+def get_outdated_packages(python_executable: str | None = None) -> list[dict]:
     """
     Return a list of outdated packages as reported by ``pip list --outdated``.
-
-    Each entry is a dict with keys:
-        - ``name``        – package name
-        - ``version``     – currently installed version
-        - ``latest_version`` – latest available version on PyPI
-        - ``latest_filetype`` – wheel / sdist
 
     Returns
     -------
     list[dict]
         Empty list when pip fails or output cannot be parsed.
     """
-    result = run_pip_command(["list", "--outdated", "--format=json"])
+    result = run_pip_command(
+        ["list", "--outdated", "--format=json"], python_executable=python_executable
+    )
     if result.returncode != 0:
         return []
 
@@ -228,17 +221,17 @@ def remove_from_requirements_file(req_path: Path, package: str) -> bool:
     return updated
 
 
-def get_dependency_graph() -> list[dict]:
+def get_dependency_graph(python_executable: str | None = None) -> list[dict]:
     """
-    Return the dependency tree for the current environment.
+    Return the dependency tree for the current or specified environment.
     Uses ``pipdeptree --json-tree`` if available, otherwise returns [].
     """
     import subprocess
 
     try:
-        # We try to run pipdeptree since it is a dependency of pydoctor
+        py = python_executable or sys.executable
         result = subprocess.run(
-            [sys.executable, "-m", "pipdeptree", "--json-tree"],
+            [py, "-m", "pipdeptree", "--json-tree"],
             capture_output=True,
             text=True,
             check=False,

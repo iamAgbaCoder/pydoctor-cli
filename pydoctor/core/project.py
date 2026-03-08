@@ -12,6 +12,7 @@ independently.
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -58,6 +59,7 @@ class ProjectContext:
     is_poetry: bool = False
     is_uv: bool = False
     is_pdm: bool = False
+    project_python: str = sys.executable
 
     # ── Factory method ─────────────────────────────────────────
 
@@ -66,19 +68,20 @@ class ProjectContext:
         """Build a ProjectContext by scanning ``path``."""
         root = Path(path).resolve()
         python_files = collect_python_files(root)
-        installed = get_installed_packages()
 
         declared = cls._parse_dependencies(root)
         meta = cls._extract_pyproject_metadata(root)
 
-        # Detect virtual environment
+        # Detect virtual environment and project python
         import os
         import platform
 
-        from pydoctor.utils.pip_utils import get_dependency_graph
+        project_py = cls._find_project_python(root, meta)
+        from pydoctor.utils.pip_utils import get_dependency_graph, get_installed_packages
 
-        in_venv = (sys.prefix != sys.base_prefix) or bool(os.environ.get("VIRTUAL_ENV"))
-        graph = get_dependency_graph()
+        installed = get_installed_packages(python_executable=project_py)
+        in_venv = (project_py != sys.base_prefix) or bool(os.environ.get("VIRTUAL_ENV"))
+        graph = get_dependency_graph(python_executable=project_py)
 
         return cls(
             root=root,
@@ -93,7 +96,72 @@ class ProjectContext:
             is_poetry=meta.get("is_poetry", False),
             is_uv=meta.get("is_uv", False),
             is_pdm=meta.get("is_pdm", False),
+            project_python=project_py,
         )
+
+    @classmethod
+    def _find_project_python(cls, root: Path, meta: dict) -> str:
+        """Find the Python interpreter for the project."""
+        import subprocess
+
+        # 1. Check for common venv names
+        for venv_dir in [".venv", "venv", ".env", "env"]:
+            if os.name == "nt":
+                py_path = root / venv_dir / "Scripts" / "python.exe"
+            else:
+                py_path = root / venv_dir / "bin" / "python"
+
+            if py_path.exists():
+                return str(py_path)
+
+        # 2. Check package managers
+        try:
+            if meta.get("is_poetry"):
+                result = subprocess.run(
+                    ["poetry", "env", "info", "-p"],
+                    capture_output=True,
+                    text=True,
+                    cwd=root,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    base = Path(result.stdout.strip())
+                    py = (
+                        base / "bin" / "python"
+                        if os.name != "nt"
+                        else base / "Scripts" / "python.exe"
+                    )
+                    if py.exists():
+                        return str(py)
+
+            if meta.get("is_uv"):
+                # uv typically uses .venv, already checked, but fallback
+                pass
+
+            if meta.get("is_pdm"):
+                result = subprocess.run(
+                    ["pdm", "info", "--where"],
+                    capture_output=True,
+                    text=True,
+                    cwd=root,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    # Actually pdm info has a python path
+                    result_py = subprocess.run(
+                        ["pdm", "info", "--python"],
+                        capture_output=True,
+                        text=True,
+                        cwd=root,
+                        check=False,
+                    )
+                    if result_py.returncode == 0:
+                        return result_py.stdout.strip()
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
+        # 3. Fallback to current interpreter
+        return sys.executable
 
     @staticmethod
     def _parse_dependencies(root: Path) -> dict[str, str]:

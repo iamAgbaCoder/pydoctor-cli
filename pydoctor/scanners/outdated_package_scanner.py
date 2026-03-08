@@ -35,7 +35,7 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     list[Issue]
     """
     issues: list[Issue] = []
-    outdated = get_outdated_packages()
+    outdated = get_outdated_packages(python_executable=ctx.project_python)
 
     if not outdated:
         issues.append(

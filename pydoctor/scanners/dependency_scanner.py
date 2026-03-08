@@ -64,7 +64,7 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     """
     issues: list[Issue] = []
 
-    pip_check_issues = _run_pip_check()
+    pip_check_issues = _run_pip_check(python_executable=ctx.project_python)
     issues.extend(pip_check_issues)
 
     # If pip check found nothing, emit an OK
@@ -88,16 +88,12 @@ def scan(ctx: ProjectContext) -> list[Issue]:
 # ──────────────────────────────────────────────────────────────
 
 
-def _run_pip_check() -> list[Issue]:
+def _run_pip_check(python_executable: str | None = None) -> list[Issue]:
     """
     Invoke ``pip check`` and parse its output into Issue objects.
-
-    ``pip check`` exits with code 0 when everything is consistent and
-    non-zero when conflicts exist.  We capture its stdout regardless of
-    exit code and parse line-by-line.
     """
     issues: list[Issue] = []
-    result = run_pip_command(["check"])
+    result = run_pip_command(["check"], python_executable=python_executable)
 
     output = (result.stdout or "").strip()
     if not output or "No broken requirements" in output:

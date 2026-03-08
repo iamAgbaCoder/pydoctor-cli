@@ -73,23 +73,23 @@ def run_pip_command(
     pip_args: list[str],
     *,
     timeout: int = 120,
+    python_executable: str | None = None,
 ) -> subprocess.CompletedProcess:
     """
-    Run a ``pip`` sub-command via the current Python interpreter.
-
-    Uses ``sys.executable -m pip`` rather than looking for ``pip`` on PATH,
-    ensuring we hit the interpreter that PyDoctor itself is running under.
+    Run a ``pip`` sub-command via the specified or current Python interpreter.
 
     Parameters
     ----------
     pip_args: Arguments to pass to pip (e.g. ["list", "--outdated"]).
     timeout:  Seconds before timing out.
+    python_executable: Path to python interpreter to use. Defaults to sys.executable.
 
     Returns
     -------
     subprocess.CompletedProcess
     """
+    py = python_executable or sys.executable
     return run_command(
-        [sys.executable, "-m", "pip"] + pip_args,
+        [py, "-m", "pip"] + pip_args,
         timeout=timeout,
     )

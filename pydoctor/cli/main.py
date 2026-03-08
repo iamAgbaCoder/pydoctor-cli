@@ -58,7 +58,6 @@ from pydoctor.reports.json_formatter import render_json
 from pydoctor.reports.table_formatter import (
     CATEGORY_LABELS,
     console,
-    render_issue_detail,
     render_report,
 )
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
@@ -66,6 +65,7 @@ from pydoctor.utils.pip_utils import (
     remove_from_requirements_file,
     update_requirements_file,
 )
+from pydoctor.utils.subprocess_utils import run_pip_command
 
 
 def version_callback(value: bool):
@@ -453,13 +453,13 @@ def _run_package_manager_command(
         return subprocess.run(cmd, cwd=path)
 
     if action == "remove":
-        cmd = [sys.executable, "-m", "pip", "uninstall", "-y", pkg]
+        return run_pip_command(["uninstall", "-y", pkg], python_executable=ctx.project_python)
     else:
-        cmd = [sys.executable, "-m", "pip", "install", pkg]
+        args = ["install"]
         if upgrade:
-            cmd.insert(-1, "--upgrade")
-    console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
-    return subprocess.run(cmd)
+            args.append("--upgrade")
+        args.append(pkg)
+        return run_pip_command(args, python_executable=ctx.project_python)
 
 
 def _add_package_to_requirements(req_file: Path, pkg: str, safe: bool) -> None:

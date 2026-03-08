@@ -1,16 +1,41 @@
 [build-system]
 requires      = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+build_backend = "setuptools.build_meta"
 
 [project]
 name        = "pydoctor-cli"
-version     = "0.1.1"
-description = "🩺 Python environment diagnostic CLI — your project's doctor."
+version     = "0.1.2"
+description = "Premium Python environment diagnostic CLI — your project's personal physician."
 readme      = "README.md"
 license     = { file = "LICENSE" }
-authors     = [{ name = "Favour Bamgboye" }]
-
+authors     = [
+    { name = "Favour Bamgboye", email = "demiladebamgboye@gmail.com" }
+]
+maintainers = [
+    { name = "Favour Bamgboye", email = "demiladebamgboye@gmail.com" }
+]
 requires-python = ">=3.10"
+keywords = [
+    "pydoctor", "diagnosis", "dependency-checker", "vulnerability-scanner",
+    "python-health", "cli-tool", "security-audit", "static-analysis"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: System :: Installation/Setup",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: Console",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "typer>=0.12",
@@ -37,8 +62,11 @@ dev = [
 pydoctor = "pydoctor.cli.main:main"
 
 [project.urls]
-"Homepage"    = "https://github.com/iamAgbaCoder/pydoctor-cli"
-"Bug Tracker" = "https://github.com/iamAgbaCoder/pydoctor-cli/issues"
+"Homepage"      = "https://pydoctor.vercel.app"
+"Repository"    = "https://github.com/iamAgbaCoder/pydoctor-cli"
+"Documentation" = "https://github.com/iamAgbaCoder/pydoctor-cli#readme"
+"Bug Tracker"   = "https://github.com/iamAgbaCoder/pydoctor-cli/issues"
+"Changelog"     = "https://github.com/iamAgbaCoder/pydoctor-cli/releases"
 
 # ──────────────────────────────────────────────────────────────
 # Tool configs
