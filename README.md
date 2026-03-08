@@ -62,7 +62,7 @@ Run a comprehensive check-up on your project.
 pydoctor diagnose
 ```
 
-### 🔨 Automated Fixes
+### Automated Fixes
 
 Let PyDoctor perform the heavy lifting. It will offer to install missing packages, upgrade outdated ones, and clean up your environment.
 
@@ -72,7 +72,7 @@ pydoctor fix
 
 ---
 
-## 📜 Release History
+## Release History
 
 ### v0.1.3
 
