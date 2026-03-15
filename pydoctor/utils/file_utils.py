@@ -78,6 +78,30 @@ def _should_skip_dir(path: Path) -> bool:
     return False
 
 
+def is_test_file(path: Path, root: Path) -> bool:
+    """
+    Check if a file belongs to a test suite based on name and location.
+
+    Matches:
+    - Files starting with test_
+    - Files named conftest.py
+    - Files inside directories named tests, test, or testing
+    """
+    name = path.name.lower()
+    if name.startswith("test_") or name == "conftest.py":
+        return True
+
+    try:
+        parts = path.relative_to(root).parts
+        for part in parts:
+            p = part.lower()
+            if p in ("tests", "test", "testing") or p.startswith("test"):
+                return True
+    except ValueError:
+        pass
+    return False
+
+
 def read_file_safe(path: Path, encoding: str = "utf-8") -> str | None:
     """
     Read a file and return its contents, or ``None`` if it cannot be read.

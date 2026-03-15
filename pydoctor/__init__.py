@@ -9,6 +9,6 @@ Author: Favour Bamgboye
 License: MIT
 """
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"
 __author__ = "Favour Bamgboye"
 __description__ = "Python environment diagnostic CLI — your project's doctor."

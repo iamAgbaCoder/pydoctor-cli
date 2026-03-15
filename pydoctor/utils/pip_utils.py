@@ -52,16 +52,21 @@ def get_outdated_packages(python_executable: str | None = None) -> list[dict]:
     list[dict]
         Empty list when pip fails or output cannot be parsed.
     """
-    result = run_pip_command(
-        ["list", "--outdated", "--format=json"], python_executable=python_executable
-    )
-    if result.returncode != 0:
-        return []
+    import subprocess
 
     try:
+        result = run_pip_command(
+            ["list", "--outdated", "--format=json"], python_executable=python_executable, timeout=30
+        )
+        if result.returncode != 0:
+            return []
         return json.loads(result.stdout)
     except json.JSONDecodeError:
         return []
+    except subprocess.TimeoutExpired:
+        # We raise TimeoutExpired up so the scanner can report it beautifully as an INFO issue
+        # rather than just displaying "All packages are up to date" (false positive).
+        raise
 
 
 # ──────────────────────────────────────────────────────────────

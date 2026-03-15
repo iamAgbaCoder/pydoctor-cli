@@ -145,7 +145,7 @@ class OSVClient:
         raw = f"osv:{name}:{version}"
         return hashlib.md5(raw.encode()).hexdigest()
 
-    def _query_batch(
+    def _query_batch(  # noqa: C901
         self,
         packages: dict[str, str],
     ) -> list[VulnerabilityRecord]:
@@ -204,7 +204,22 @@ class OSVClient:
         # Parse results — one result entry per queried package (in order)
         for (name, version), result in zip(to_fetch, results, strict=False):
             vulns = result.get("vulns", [])
-            parsed = [self._parse_vuln(v, name, version) for v in vulns]
+            parsed = []
+            for v in vulns:
+                # The batch endpoint sometimes returns sparsely populated records (e.g., just 'id' and 'modified').
+                # If crucial fields are missing, fetch the full advisory record.
+                if "summary" not in v and "details" not in v and "id" in v:
+                    try:
+                        resp = self._session.get(
+                            f"https://api.osv.dev/v1/vulns/{v['id']}", timeout=self._timeout
+                        )
+                        if resp.status_code == 200:
+                            v = resp.json()
+                    except (requests.RequestException, ValueError):
+                        pass
+
+                parsed.append(self._parse_vuln(v, name, version))
+
             records.extend(parsed)
 
             # Cache the parsed results (as dicts for JSON-serialisability)
@@ -223,7 +238,20 @@ class OSVClient:
         Parse a single OSV vulnerability JSON object into a VulnerabilityRecord.
         """
         vuln_id = raw.get("id", "UNKNOWN")
-        summary = raw.get("summary", raw.get("details", "No description.")[:120])
+
+        # Safely extract and format a readable summary
+        summary = raw.get("summary")
+        if not summary:
+            details = raw.get("details", "")
+            if not details:
+                summary = "No detailed description provided by the advisory."
+            else:
+                summary = " ".join(details.split())
+                if len(summary) > 120:
+                    summary = summary[:117] + "..."
+        else:
+            summary = " ".join(summary.split())
+
         aliases = raw.get("aliases", [])
         refs = [r.get("url", "") for r in raw.get("references", []) if r.get("url")]
 

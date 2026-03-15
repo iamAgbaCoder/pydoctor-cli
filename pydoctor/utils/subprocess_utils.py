@@ -72,7 +72,7 @@ def run_command(
 def run_pip_command(
     pip_args: list[str],
     *,
-    timeout: int = 120,
+    timeout: int = 300,
     python_executable: str | None = None,
 ) -> subprocess.CompletedProcess:
     """

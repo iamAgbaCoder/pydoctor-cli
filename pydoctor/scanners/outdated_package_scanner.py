@@ -35,7 +35,26 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     list[Issue]
     """
     issues: list[Issue] = []
-    outdated = get_outdated_packages(python_executable=ctx.project_python)
+
+    import subprocess
+
+    try:
+        outdated = get_outdated_packages(python_executable=ctx.project_python)
+    except subprocess.TimeoutExpired:
+        issues.append(
+            Issue(
+                category=CATEGORY,
+                code="PKG_OUTDATED_TIMEOUT",
+                severity=Severity.INFO,
+                title="Network Timeout: Outdated Check Skipped",
+                description="Checking for outdated packages over the network took too long. This is usually due to a slow internet connection or index server.",
+                recommendation="Try running the check again later or verify your network connection.",
+            )
+        )
+        return issues
+
+    except Exception:
+        outdated = []
 
     if not outdated:
         issues.append(

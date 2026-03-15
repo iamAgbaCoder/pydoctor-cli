@@ -50,32 +50,53 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     imported_packages = _get_imported_packages(ctx)
     implicitly_used = _get_implicitly_used_packages(ctx, imported_packages)
 
-    unused = _identify_unused(ctx, imported_packages, implicitly_used)
+    unused, transitive = _identify_unused(ctx, imported_packages, implicitly_used)
 
-    if not unused:
+    issues: list[Issue] = []
+
+    if not unused and not transitive:
         return [
             Issue(
                 category=CATEGORY,
                 code="UNUSED_NONE_FOUND",
                 severity=Severity.OK,
                 title="No unused packages detected",
-                description="All declared dependencies appear to be imported.",
+                description="All declared dependencies appear to be properly utilized.",
                 recommendation="",
             )
         ]
 
-    return [
-        Issue(
-            category=CATEGORY,
-            code="UNUSED_PACKAGE",
-            severity=Severity.WARNING,
-            title=f"Possibly unused: {pkg}",
-            description=f"No imports corresponding to '{pkg}' were found.",
-            recommendation=f"pip uninstall {pkg}",
-            package=pkg,
+    for pkg in sorted(unused):
+        issues.append(
+            Issue(
+                category=CATEGORY,
+                code="UNUSED_PACKAGE",
+                severity=Severity.WARNING,
+                title=f"Unused dependency: {pkg}",
+                description=f"No imports corresponding to '{pkg}' were found, and it is not required by any used packages.",
+                recommendation=f"pip uninstall {pkg}",
+                package=pkg,
+            )
         )
-        for pkg in sorted(unused)
-    ]
+
+    for pkg, parents in sorted(transitive, key=lambda x: x[0]):
+        parent_str = ", ".join(parents[:3])
+        if len(parents) > 3:
+            parent_str += " and others"
+
+        issues.append(
+            Issue(
+                category=CATEGORY,
+                code="UNUSED_TRANSITIVE",
+                severity=Severity.INFO,
+                title=f"Transitive dependency: {pkg} [dim](required by {parent_str})[/]",
+                description=f"'{pkg}' is declared explicitly but only used indirectly via {parent_str}.",
+                recommendation="Consider removing from requirements to keep dependencies lean.",
+                package=pkg,
+            )
+        )
+
+    return issues
 
 
 def _check_preconditions(ctx: ProjectContext) -> list[Issue]:
@@ -113,8 +134,8 @@ def _get_imported_packages(ctx: ProjectContext) -> set[str]:
     return pkgs
 
 
-def _get_implicitly_used_packages(ctx: ProjectContext, imported: set[str]) -> set[str]:
-    used = set()
+def _get_implicitly_used_packages(ctx: ProjectContext, imported: set[str]) -> dict[str, list[str]]:
+    used: dict[str, list[str]] = {}
 
     # We also consider dependencies of "ignored" packages as used
     # (e.g., if black is ignored, its dependencies like pathspec are also "used")
@@ -131,31 +152,35 @@ def _get_implicitly_used_packages(ctx: ProjectContext, imported: set[str]) -> se
         "setuptools",
         "wheel",
         "pipdeptree",
+        "ruff",
+        "build",
     }
     if "ignored_packages" in ctx.config:
         ignored_base.update(p.lower().replace("_", "-") for p in ctx.config["ignored_packages"])
 
     search_roots = imported | ignored_base
 
-    def mark(node: dict):
+    def mark(node: dict, parent: str):
         for dep in node.get("dependencies", []):
             dname = dep.get("package_name", "").lower().replace("_", "-")
-            if dname not in used:
-                used.add(dname)
-                mark(dep)
+            if parent not in used.setdefault(dname, []):
+                used[dname].append(parent)
+                mark(dep, parent)
 
     def search(nodes: list[dict]):
         for node in nodes:
             name = node.get("package_name", "").lower().replace("_", "-")
             if name in search_roots:
-                mark(node)
+                mark(node, name)
             search(node.get("dependencies", []))
 
     search(ctx.dependency_graph)
     return used
 
 
-def _identify_unused(ctx: ProjectContext, imported: set[str], implicit: set[str]) -> list[str]:
+def _identify_unused(
+    ctx: ProjectContext, imported: set[str], implicit: dict[str, list[str]]
+) -> tuple[list[str], list[tuple[str, list[str]]]]:
     ignored = {
         "black",
         "pytest",
@@ -175,8 +200,16 @@ def _identify_unused(ctx: ProjectContext, imported: set[str], implicit: set[str]
         ignored.update(p.lower().replace("_", "-") for p in ctx.config["ignored_packages"])
 
     unused = []
+    transitive = []
+
     for dep in ctx.declared_deps:
         norm = dep.lower().replace("_", "-")
-        if norm not in imported and norm not in implicit and norm not in ignored:
+        if norm in imported or norm in ignored:
+            continue
+
+        if norm in implicit:
+            transitive.append((dep, implicit[norm]))
+        else:
             unused.append(dep)
-    return unused
+
+    return unused, transitive

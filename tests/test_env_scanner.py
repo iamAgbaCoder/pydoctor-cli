@@ -10,8 +10,6 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from pydoctor.config.settings import Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.scanners import env_scanner

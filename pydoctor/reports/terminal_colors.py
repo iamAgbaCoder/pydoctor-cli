@@ -29,8 +29,8 @@ STYLE_CODE = Style(color="magenta")
 # ── Icons ──────────────────────────────────────────────────────
 ICON_OK = "[bright_green]✔[/]"
 ICON_INFO = "[cyan]ℹ[/]"
-ICON_WARNING = "[yellow]⚠[/]"
-ICON_ERROR = "[red]✖[/]"
+ICON_WARNING = "[orange1]⚠[/]"
+ICON_ERROR = "[red3]✖[/]"
 ICON_CRITICAL = "[bright_red bold]✖✖[/]"
 ICON_STETHOSCOPE = "🩺"
 ICON_ARROW = "[dim]→[/]"
@@ -38,21 +38,25 @@ ICON_FIX = "🔧"
 ICON_SCAN = "🔍"
 ICON_LOCK = "🔒"
 ICON_CLOCK = "⏱"
+ICON_CHEVRON = "[bright_cyan]»[/]"
 
 # ── Custom Rich theme (registered on the Console) ──────────────
 PYDOCTOR_THEME = Theme(
     {
         "ok": "bright_green bold",
         "info": "cyan",
-        "warning": "yellow bold",
-        "error": "red bold",
+        "warning": "orange1 bold",
+        "error": "red3 bold",
         "critical": "bright_red bold underline",
         "header": "bright_cyan bold",
         "section": "bright_white bold",
         "dim_text": "grey50",
         "pkg": "bright_blue",
         "code": "magenta",
-        "rule": "bright_cyan",
+        "rule": "grey30",
+        "stdout": "bright_green",
+        "label": "bright_white bold",
+        "kernel": "grey70 italic",
     }
 )
 

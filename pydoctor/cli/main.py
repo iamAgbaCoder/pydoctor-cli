@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 from typing import Annotated
 
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
@@ -34,8 +35,6 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")  # type: ignore
     except Exception:
         pass
-
-from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -50,7 +49,6 @@ from rich.prompt import Confirm
 
 from pydoctor import __version__
 from pydoctor.cache.cache_manager import CacheManager
-from pydoctor.config.settings import Severity
 from pydoctor.core.analyzer import Analyzer
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import DiagnosisReport
@@ -58,7 +56,6 @@ from pydoctor.reports.json_formatter import render_json
 from pydoctor.reports.table_formatter import (
     CATEGORY_LABELS,
     console,
-    render_issue_detail,
     render_report,
 )
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
@@ -76,40 +73,25 @@ def version_callback(value: bool):
 
 
 _HELP_EPILOG = """
-[b]💊 PyDoctor Quick Start Guide[/b]
+[section]🚀  QUICK START WORKFLOW[/]
 
-[blue]Step 1: Full Diagnosis[/]
-  Perform a complete health check on your current project:
-  [dim]$ pydoctor diagnose[/]
+  [dim]1.[/] [b]Full Diagnosis:[/]       [code]$ pydoctor diagnose[/]
+  [dim]2.[/] [b]CI Security:[/]          [code]$ pydoctor check --ci[/]
+  [dim]3.[/] [b]Auto-Remediation:[/]     [code]$ pydoctor fix[/]
 
-[blue]Step 2: Targeted Scans[/]
-  Isolation-focused diagnostic commands:
-  [dim]$ pydoctor scan-security[/]   [grey]— Check for CVEs & advisories[/]
-  [dim]$ pydoctor scan-unused[/]     [grey]— Detect dead dependencies[/]
-  [dim]$ pydoctor scan-deps[/]       [grey]— Find dependency conflicts[/]
-  [dim]$ pydoctor check-env[/]       [grey]— Verify Python & venv setup[/]
+[section]🏥  COMMUNITY & SUPPORT[/]
 
-[blue]Step 3: Automated Treatment[/]
-  Let the doctor remediate issues automatically:
-  [dim]$ pydoctor fix[/]               [grey]— Interactive remediation[/]
-  [dim]$ pydoctor fix --no-safe[/]     [grey]— Professional auto-fix mode[/]
+  [label]Docs:[/][pkg] https://pydoctor.vercel.app/docs[/]
+  [label]Version:[/][info] v2.0.0 (Premium Kernel Edition)[/]
 
-[b]🔧 Global Workflow Options[/b]
-  [cyan]--path, -p[/] PATH       Target a specific project folder.
-  [cyan]--json, -j[/]            Machine-readable output for CI/CD.
-  [cyan]--verbose, -v[/]         Show full issue histories and trace.
-  [cyan]--version[/]             Display current PyDoctor version.
-
-[b]🏥 Community & Support[/b]
-  Documentation: [u]https://github.com/iamAgbaCoder/pydoctor-cli[/u]
-  Verdict: [i]Healthy code leads to healthy deployments.[/i]
+[kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
 """
 
 app = typer.Typer(
     name="pydoctor",
-    help="🩺  PyDoctor — Professional Python Diagnostic Assistant.\n\nAutomate your environment audits, dependency security scans, and bloat detection in seconds.",
+    help="🩺 [bold white]PyDoctor[/] — [italic grey70]Python Environment Diagnostic Assistant[/]\n\n[dim]Automate your environment audits, dependency security scans, and bloat detection in seconds.[/]",
     epilog=_HELP_EPILOG,
-    add_completion=True,
+    add_completion=False,
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -133,15 +115,10 @@ def main_callback(
 
 err_console = Console(stderr=True, theme=PYDOCTOR_THEME)
 
-
-# ──────────────────────────────────────────────────────────────
-# Shared option types
-# ──────────────────────────────────────────────────────────────
-
-_PATH_OPT = typer.Option(".", "--path", "-p", help="Project directory to scan.")
-_JSON_FLAG = typer.Option(False, "--json", "-j", help="Output results as JSON.")
-_VERBOSE_FLAG = typer.Option(False, "--verbose", "-v", help="Show detailed output and timing.")
-_NO_CACHE = typer.Option(False, "--no-cache", help="Bypass the local vulnerability cache.")
+_PATH_ARG = typer.Option(..., "--path", "-p", help="Project directory to scan.")
+_JSON_ARG = typer.Option(..., "--json", "-j", help="Output results as JSON.")
+_VERBOSE_ARG = typer.Option(..., "--verbose", "-v", help="Show detailed output and timing.")
+_NO_CACHE_ARG = typer.Option(..., "--no-cache", help="Bypass the local vulnerability cache.")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -155,7 +132,9 @@ def _run_scan(
     verbose: bool = False,
     no_cache: bool = False,
     as_json: bool = False,
-) -> DiagnosisReport:
+    ci_mode: bool = False,
+    command: str | None = None,
+) -> DiagnosisReport:  # noqa: C901
     """Run the Analyzer with Rich progress indicators."""
     if no_cache:
         CacheManager().clear()
@@ -163,15 +142,23 @@ def _run_scan(
     if not as_json:
         console.print("[section]Scanning project...[/]")
 
+    # If ci_mode is on, we force the ci scanner
+    if ci_mode:
+        if scanners is None:
+            scanners = ["ci"]
+        elif "ci" not in scanners:
+            scanners.append("ci")
+
     def progress_callback(key: str) -> None:
         if not as_json:
             label = CATEGORY_LABELS.get(key, key.title())
-            console.print(f"[ok]✔[/] Checking {label.lower().replace(' ', ' ')}")
+            console.print(f"[kernel]»[/] Checking {label.lower().replace(' ', ' ')}")
 
     if as_json:
-        # Avoid overriding stdout when generating JSON
         analyzer = Analyzer(project_path=path, scanners=scanners, verbose=verbose)
-        return analyzer.run(on_progress=None)
+        report = analyzer.run(on_progress=None)
+        report.command = command
+        return report
 
     with Progress(
         SpinnerColumn("dots", style="bright_cyan"),
@@ -187,16 +174,12 @@ def _run_scan(
             verbose=verbose,
         )
         report = analyzer.run(on_progress=progress_callback)
+        report.command = command
 
     return report
 
 
-def _output(
-    report: DiagnosisReport,
-    as_json: bool,
-    verbose: bool = False,
-) -> None:
-    """Print the report in the requested format."""
+def _output(report: DiagnosisReport, as_json: bool, verbose: bool = False) -> None:
     if as_json:
         render_json(report)
     else:
@@ -211,117 +194,121 @@ def _exit_code(report: DiagnosisReport, path: str = ".") -> int:
     """
     if report.has_errors:
         return 1
-
     try:
         from pydoctor.analysis.health_score import calculate_health
-        from pydoctor.core.project import ProjectContext
 
-        ctx = ProjectContext.from_path(path)
-        threshold = ctx.config.get("min_health_score", 0)
-
+        threshold = report.ctx.config.get("min_health_score", 0) if report.ctx else 0
         if threshold > 0:
             metrics = calculate_health(report)
             if metrics.score < threshold:
                 return 1
     except Exception:
         pass
-
     return 0
 
 
-# ──────────────────────────────────────────────────────────────
-# diagnose — full scan
-# ──────────────────────────────────────────────────────────────
-
-
-@app.command()
+@app.command(rich_help_panel="CORE COMMANDS")
 def diagnose(
-    path: str = _PATH_OPT,
-    json: bool = _JSON_FLAG,
-    verbose: bool = _VERBOSE_FLAG,
-    no_cache: bool = _NO_CACHE,
-) -> None:
-    """
-    🩺  Run a **full** diagnosis of your Python project.
+    path: Annotated[str, _PATH_ARG] = ".",
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
+    no_cache: Annotated[bool, _NO_CACHE_ARG] = False,
+) -> None:  # noqa: C901
+    """🩺  Run a **full** diagnosis of your Python project."""
+    if not json:
+        ctx = ProjectContext.from_path(path)
+        if not ctx.in_virtualenv:
+            console.print("[warning]⚠ No virtual environment detected in this project.[/]")
+            if not Confirm.ask("Do you want to proceed using global system packages?"):
+                console.print(
+                    "\n[info]ℹ Cancelled. Please activate a virtual environment and try again.[/]"
+                )
+                raise typer.Exit()
 
-    Checks the environment, dependency tree, outdated packages,
-    security vulnerabilities, and unused imports.
-
-    Examples\n
-    ────────\n
-    pydoctor diagnose\n
-    pydoctor diagnose --path ./my-project\n
-    pydoctor diagnose --json\n
-    pydoctor diagnose --verbose\n
-    """
-    report = _run_scan(path=path, verbose=verbose, no_cache=no_cache, as_json=json)
-    _output(report, as_json=json, verbose=verbose)
-
-    if verbose and not json:
-        _render_verbose_details(report)
-
-    raise typer.Exit(code=_exit_code(report, path))
-
-
-# ──────────────────────────────────────────────────────────────
-# check-env
-# ──────────────────────────────────────────────────────────────
-
-
-@app.command(name="check-env")
-def check_env(
-    path: str = _PATH_OPT,
-    json: bool = _JSON_FLAG,
-    verbose: bool = _VERBOSE_FLAG,
-) -> None:
-    """
-    🌍  Check the Python **environment** (version, venv, pip).
-    """
-    report = _run_scan(scanners=["environment"], path=path, verbose=verbose, as_json=json)
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
-
-
-# ──────────────────────────────────────────────────────────────
-# scan-deps
-# ──────────────────────────────────────────────────────────────
-
-
-@app.command(name="scan-deps")
-def scan_deps(
-    path: str = _PATH_OPT,
-    json: bool = _JSON_FLAG,
-    verbose: bool = _VERBOSE_FLAG,
-) -> None:
-    """
-    📦  Scan for **dependency conflicts** and missing packages.
-    """
-    report = _run_scan(scanners=["dependencies"], path=path, verbose=verbose, as_json=json)
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
-
-
-# ──────────────────────────────────────────────────────────────
-# scan-security
-# ──────────────────────────────────────────────────────────────
-
-
-@app.command(name="scan-security")
-def scan_security(
-    path: str = _PATH_OPT,
-    json: bool = _JSON_FLAG,
-    verbose: bool = _VERBOSE_FLAG,
-    no_cache: bool = _NO_CACHE,
-) -> None:
-    """
-    🔒  Scan installed packages for known **security vulnerabilities** via OSV.
-    """
     report = _run_scan(
-        scanners=["security"],
-        path=path,
-        verbose=verbose,
-        no_cache=no_cache,
-        as_json=json,
+        path=path, verbose=verbose, no_cache=no_cache, as_json=json, command="diagnose"
+    )
+    _output(report, as_json=json, verbose=verbose)
+    raise typer.Exit(code=_exit_code(report, path))
+
+
+@app.command(rich_help_panel="CORE COMMANDS")
+def check(
+    path: Annotated[str, _PATH_ARG] = ".",
+    ci: bool = typer.Option(False, "--ci", help="Run in CI/CD guard mode."),
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
+) -> None:
+    """🛡️  Perform security and health checks. Use --ci for pipeline shielding."""
+    report = _run_scan(path=path, ci_mode=ci, verbose=verbose, as_json=json, command="check")
+    _output(report, as_json=json, verbose=verbose)
+    raise typer.Exit(code=_exit_code(report, path))
+
+
+@app.command(rich_help_panel="SECURITY & CI/CD")
+def docker(
+    image: Annotated[str | None, typer.Argument(help="Docker image to scan (optional).")] = None,
+    path: Annotated[str, _PATH_ARG] = ".",
+) -> None:
+    """🐳  Diagnose Python issues inside **Docker** containers."""
+    console.print(Panel("[section]🐳 Docker Environment Doctor[/]", border_style="rule"))
+    console.print("[kernel]Scanning for Dockerfile and container runtime...[/]")
+    dockerfile = Path(path) / "Dockerfile"
+    if not dockerfile.exists():
+        console.print("[error]✖ No Dockerfile found in current directory.[/]")
+    else:
+        console.print(f"[ok]✔[/] [pkg]Dockerfile[/] detected at {dockerfile}")
+        content = dockerfile.read_text()
+        if "python" not in content.lower():
+            console.print(
+                "[warning]⚠ Warning: Dockerfile might not be using a Python base image.[/]"
+            )
+        else:
+            console.print("[ok]✔[/] Python base image identified.")
+    console.print("\n[info]ℹ This feature is in beta. Full container introspection coming soon.[/]")
+
+
+@app.command(rich_help_panel="SECURITY & CI/CD")
+def github(
+    repo: Annotated[str | None, typer.Argument(help="GitHub repository URL (optional).")] = None,
+    path: Annotated[str, _PATH_ARG] = ".",
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
+) -> None:
+    """🐙  Integrate with **GitHub** for repository-wide health scans."""
+    if not json:
+        console.print(Panel("[section]🐙 GitHub Repository Doctor[/]", border_style="rule"))
+        if not repo:
+            res = subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=path,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode != 0:
+                console.print("[warning]✖ Not an active git repository.[/]")
+            else:
+                console.print("[ok]✔[/] Local git repository detected.")
+        console.print("\n[info]ℹ Running pydoctor on the current branch...[/]")
+
+    report = _run_scan(path=path, ci_mode=True, verbose=verbose, as_json=json, command="github")
+    _output(report, as_json=json, verbose=verbose)
+    raise typer.Exit(code=_exit_code(report, path))
+
+
+# --- Individual Targeted Scans ---
+
+
+@app.command(name="scan-security", rich_help_panel="SECURITY & CI/CD")
+def scan_security(
+    path: Annotated[str, _PATH_ARG] = ".",
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
+) -> None:
+    """🔒 Scan installed packages for known vulnerabilities (OSV)."""
+    report = _run_scan(
+        scanners=["security"], path=path, verbose=verbose, as_json=json, command="scan-security"
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
@@ -332,107 +319,93 @@ def scan_security(
 # ──────────────────────────────────────────────────────────────
 
 
-@app.command(name="scan-unused")
+@app.command(name="scan-unused", rich_help_panel="RESOURCE HYGIENE")
 def scan_unused(
-    path: str = _PATH_OPT,
-    json: bool = _JSON_FLAG,
-    verbose: bool = _VERBOSE_FLAG,
+    path: Annotated[str, _PATH_ARG] = ".",
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
-    """
-    🧹  Detect **unused packages** via AST import analysis.
-    """
-    report = _run_scan(scanners=["unused"], path=path, verbose=verbose, as_json=json)
+    """🧹 Detect unused packages via AST analysis."""
+    report = _run_scan(
+        scanners=["unused"], path=path, verbose=verbose, as_json=json, command="scan-unused"
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
 
 
-# ──────────────────────────────────────────────────────────────
-# report — alias for diagnose
-# ──────────────────────────────────────────────────────────────
-
-
-@app.command()
-def report(
-    path: str = _PATH_OPT,
-    json: bool = _JSON_FLAG,
-    verbose: bool = _VERBOSE_FLAG,
-    no_cache: bool = _NO_CACHE,
+@app.command(name="scan-deps", rich_help_panel="RESOURCE HYGIENE")
+def scan_deps(
+    path: Annotated[str, _PATH_ARG] = ".",
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
-    """
-    📋  Generate a **full diagnosis report** (alias for diagnose).
-    """
-    report_data = _run_scan(path=path, verbose=verbose, no_cache=no_cache, as_json=json)
-    _output(report_data, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report_data))
+    """📦 Scan for dependency version conflicts."""
+    report = _run_scan(
+        scanners=["dependencies"], path=path, verbose=verbose, as_json=json, command="scan-deps"
+    )
+    _output(report, as_json=json, verbose=verbose)
+    raise typer.Exit(code=_exit_code(report, path))
 
 
-# ──────────────────────────────────────────────────────────────
-# fix — automated remediation
-# ──────────────────────────────────────────────────────────────
+@app.command(name="check-env", rich_help_panel="RESOURCE HYGIENE")
+def check_env(
+    path: Annotated[str, _PATH_ARG] = ".",
+    json: Annotated[bool, _JSON_ARG] = False,
+    verbose: Annotated[bool, _VERBOSE_ARG] = False,
+) -> None:
+    """🌍 Verify Python and virtual environment health."""
+    report = _run_scan(
+        scanners=["environment"], path=path, verbose=verbose, as_json=json, command="check-env"
+    )
+    _output(report, as_json=json, verbose=verbose)
+    raise typer.Exit(code=_exit_code(report, path))
 
 
-@app.command()
+# --- Re-adding fix and other commands ---
+
+
+@app.command(rich_help_panel="CORE COMMANDS")
 def fix(
     packages: Annotated[
         list[str] | None, typer.Argument(help="Specific packages to fix (optional).")
     ] = None,
-    path: str = _PATH_OPT,
-    safe: bool = typer.Option(
-        True,
-        "--safe/--no-safe",
-        help="Safe mode asks for confirmation before each action (default: on).",
-    ),
-    upgrade: bool = typer.Option(True, "--upgrade/--no-upgrade", help="Upgrade outdated packages."),
-    remove: bool = typer.Option(False, "--remove/--no-remove", help="Remove unused packages."),
+    path: Annotated[str, _PATH_ARG] = ".",
+    safe: bool = typer.Option(True, "--safe/--no-safe", help="Confirm each action."),
+    upgrade: bool = typer.Option(True, "--upgrade/--no-upgrade", help="Upgrade outdated."),
+    remove: bool = typer.Option(False, "--remove/--no-remove", help="Remove unused."),
 ) -> None:
-    """
-    🔧  Apply **automated fixes** to common issues.
-    """
-    console.print()
+    """🔧  Apply **automated fixes** to common issues."""
     console.print(
         Panel(
-            "[section]🔧  PyDoctor Auto-Fix[/]\n\nScanning for fixable issues …",
-            border_style="rule",
+            "[section]🔧 PyDoctor Auto-Fix[/]\n\nScanning for fixable issues …", border_style="rule"
         )
     )
-
     report_data = _run_scan(path=path)
     ctx = ProjectContext.from_path(path)
-
     if packages:
         _filter_issues_by_targets(report_data, packages)
-
     actions = 0
     actions += _fix_vulnerabilities(report_data, ctx, safe)
-
     if upgrade:
         actions += _fix_outdated(report_data, ctx, safe)
-
-    # Resolve dependency conflicts (missing packages, etc.)
     actions += _fix_dependencies(report_data, ctx, safe)
-
     if remove or packages:
         actions += _fix_unused(report_data, ctx, safe)
-
     actions += _fix_venv(report_data, path, safe)
-
     _render_fix_summary(actions)
 
 
-def _filter_issues_by_targets(report_data: DiagnosisReport, packages: list[str]) -> None:
+def _filter_issues_by_targets(report_data, packages):
     targets = {p.lower() for p in packages}
     report_data.issues = [
         i for i in report_data.issues if i.package and i.package.lower() in targets
     ]
     if not report_data.issues:
-        console.print(f"\n[warning]No fixable issues found for packages: {', '.join(packages)}[/]")
+        console.print(f"\n[warning]No fixable issues found for: {', '.join(packages)}[/]")
         raise typer.Exit()
 
 
-def _run_package_manager_command(
-    ctx: ProjectContext, pkg: str, action: str, upgrade: bool = False
-) -> subprocess.CompletedProcess:
-    """Run the appropriate command for the detected package manager."""
+def _run_package_manager_command(ctx, pkg, action, upgrade=False):
     path = str(ctx.root)
     if ctx.is_poetry:
         cmd = ["poetry", "add", pkg] if action == "add" else ["poetry", "remove", pkg]
@@ -452,7 +425,6 @@ def _run_package_manager_command(
             cmd = ["pdm", "update", pkg]
         console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
         return subprocess.run(cmd, cwd=path)
-
     if action == "remove":
         return run_pip_command(["uninstall", "-y", pkg], python_executable=ctx.project_python)
     else:
@@ -463,259 +435,114 @@ def _run_package_manager_command(
         return run_pip_command(args, python_executable=ctx.project_python)
 
 
-def _add_package_to_requirements(req_file: Path, pkg: str, safe: bool) -> None:
-    """Helper to add a package to requirements.txt with version pinning."""
-    if not safe or Confirm.ask(f"  Add [pkg]{pkg}[/] to [code]requirements.txt[/]?"):
-        try:
-            content = req_file.read_text(encoding="utf-8")
-            from pydoctor.utils.pip_utils import get_installed_packages
-
-            installed = get_installed_packages()
-            search_key = pkg.lower().replace("_", "-").replace(".", "-")
-            version = installed.get(search_key)
-            entry = f"{pkg}=={version}" if version else pkg
-
-            if pkg.lower() not in content.lower():
-                with open(req_file, "a", encoding="utf-8") as f:
-                    f.write(f"\n{entry}")
-                console.print(f"  [ok]✔  {entry} added to requirements.txt[/]")
-            else:
-                console.print(f"  [dim_text]ℹ  {pkg} is already in requirements.txt[/]")
-        except Exception:
-            err_console.print("[error]✖  Failed to update requirements.txt[/]")
-
-
-def _update_pip_requirements(
-    ctx: ProjectContext, pkg: str, safe: bool, action: str, version_spec: str = ""
-) -> None:
-    """Update requirements.txt if using pip."""
+def _update_pip_requirements(ctx, pkg, safe, action, version_spec=""):
     if ctx.is_poetry or ctx.is_uv or ctx.is_pdm:
         return
-
-    path = str(ctx.root)
-    req_file = Path(path) / "requirements.txt"
+    req_file = ctx.root / "requirements.txt"
     if not req_file.is_file():
         return
-
     if action == "remove":
-        if not safe or Confirm.ask(f"  Remove [pkg]{pkg}[/] from [code]requirements.txt[/]?"):
+        if not safe or Confirm.ask(" Remove from requirements.txt?"):
             remove_from_requirements_file(req_file, pkg)
     elif action == "update":
-        if not safe or Confirm.ask(f"  Update [code]requirements.txt[/] for [pkg]{pkg}[/]?"):
+        if not safe or Confirm.ask(" Update requirements.txt?"):
             update_requirements_file(req_file, pkg, version_spec)
-    elif action == "add":
-        _add_package_to_requirements(req_file, pkg, safe)
 
 
-def _fix_vulnerabilities(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
+def _fix_vulnerabilities(report, ctx, safe):
     vulnerable = [i for i in report.issues if i.code == "SEC_VULNERABILITY"]
     if not vulnerable:
         return 0
-
-    console.print(f"\n[section]Found {len(vulnerable)} security vulnerabilities to fix:[/]")
-    vulnerable_pkgs = {i.package: i for i in vulnerable if i.package}
     actions = 0
-
-    for pkg in vulnerable_pkgs:
-        if safe and not Confirm.ask(f"  Fix vulnerability in [pkg]{pkg}[/] by upgrading?"):
-            continue
-
-        result = _run_package_manager_command(ctx, pkg, "add", upgrade=True)
-        if result.returncode == 0:
-            console.print(f"  [ok]✔  {pkg} upgraded successfully.[/]")
-            actions += 1
-        else:
-            err_console.print(f"  [error]✖  Failed to fix {pkg}[/]")
+    for i in vulnerable:
+        if i.package and (not safe or Confirm.ask(f" Fix {i.package}?")):
+            if _run_package_manager_command(ctx, i.package, "add", True).returncode == 0:
+                console.print(f" [ok]✔ {i.package} fixed.[/]")
+                actions += 1
     return actions
 
 
-def _fix_outdated(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
+def _fix_outdated(report, ctx, safe):
     outdated = [i for i in report.issues if i.code == "PKG_OUTDATED"]
-    if not outdated:
-        return 0
-
-    console.print(f"\n[section]Found {len(outdated)} outdated package(s) to upgrade:[/]")
     actions = 0
-
-    for issue in outdated:
-        pkg = issue.package or issue.extra.get("name", "")
-        if not pkg:
-            continue
-        latest = issue.extra.get("latest_version", "latest")
-        if safe and not Confirm.ask(f"  Upgrade [pkg]{pkg}[/] → {latest}?"):
-            continue
-
-        result = _run_package_manager_command(ctx, pkg, "update", upgrade=True)
-        if result.returncode == 0:
-            console.print(f"  [ok]✔  {pkg} upgraded to {latest}[/]")
-            actions += 1
-            _update_pip_requirements(ctx, pkg, safe, "update", f"=={latest}")
-        else:
-            err_console.print(f"  [error]✖  Failed to upgrade {pkg}[/]")
+    for i in outdated:
+        pkg = i.package
+        if pkg and (not safe or Confirm.ask(f" Upgrade {pkg}?")):
+            if _run_package_manager_command(ctx, pkg, "update", True).returncode == 0:
+                console.print(f" [ok]✔ {pkg} upgraded.[/]")
+                actions += 1
     return actions
 
 
-def _fix_dependencies(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
+def _fix_dependencies(report, ctx, safe):
     conflicts = [
         i
         for i in report.issues
         if i.category == "dependencies" and i.code in ("DEP_MISSING", "DEP_VERSION_CONFLICT")
     ]
-    if not conflicts:
-        return 0
-
-    unique_targets = {}
-    for issue in conflicts:
-        target = issue.extra.get("missing_package") or issue.extra.get("required_spec")
-        if target:
-            unique_targets[target] = issue.title
-
-    console.print(
-        f"\n[section]Found {len(unique_targets)} unique dependency conflict(s) to resolve:[/]"
-    )
     actions = 0
-
-    for target, title in unique_targets.items():
-        if safe and not Confirm.ask(f"  Resolve: [pkg]{title}[/]?"):
-            continue
-
-        result = _run_package_manager_command(ctx, target, "add")
-        if result.returncode == 0:
-            console.print(f"  [ok]✔  {target} resolved successfully.[/]")
-            actions += 1
-            _update_pip_requirements(ctx, target, safe, "add")
-        else:
-            err_console.print(f"  [error]✖  Failed to resolve {target}[/]")
-
+    for i in conflicts:
+        target = i.extra.get("missing_package") or i.extra.get("required_spec")
+        if target and (not safe or Confirm.ask(f" Resolve {target}?")):
+            if _run_package_manager_command(ctx, target, "add").returncode == 0:
+                console.print(f" [ok]✔ {target} resolved.[/]")
+                actions += 1
     return actions
 
 
-def _fix_unused(report: DiagnosisReport, ctx: ProjectContext, safe: bool) -> int:
+def _fix_unused(report, ctx, safe):
     unused = [i for i in report.issues if i.code == "UNUSED_PACKAGE"]
-    if not unused:
-        return 0
-
-    console.print(f"\n[section]Found {len(unused)} possibly unused package(s):[/]")
     actions = 0
-
-    for issue in unused:
-        pkg = issue.package or ""
-        if not pkg:
-            continue
-        if safe and not Confirm.ask(f"  Remove [pkg]{pkg}[/]?"):
-            continue
-
-        result = _run_package_manager_command(ctx, pkg, "remove")
-        if result.returncode == 0:
-            console.print(f"  [ok]✔  {pkg} removed.[/]")
-            actions += 1
-            _update_pip_requirements(ctx, pkg, safe, "remove")
-        else:
-            err_console.print(f"  [error]✖  Failed to remove {pkg}[/]")
+    for i in unused:
+        if i.package and (not safe or Confirm.ask(f" Remove {i.package}?")):
+            if _run_package_manager_command(ctx, i.package, "remove").returncode == 0:
+                console.print(f" [ok]✔ {i.package} removed.[/]")
+                actions += 1
     return actions
 
 
-def _fix_venv(report: DiagnosisReport, path: str, safe: bool) -> int:
+def _fix_venv(report, path, safe):
     if not any(i.code == "ENV_NO_VENV" for i in report.issues):
         return 0
-
     venv_path = Path(path) / ".venv"
     if venv_path.exists():
         return 0
-
-    if safe:
-        if not Confirm.ask(f"  Create a virtual environment at [code]{venv_path}[/]?"):
-            return 0
-
-    console.print(f"  [dim_text]Running: python -m venv {venv_path}[/]")
-    result = subprocess.run([sys.executable, "-m", "venv", str(venv_path)])
-    if result.returncode == 0:
-        console.print(f"  [ok]✔  Virtual environment created at {venv_path}[/]")
-        return 1
-    err_console.print("  [error]✖  Failed to create venv[/]")
+    if not safe or Confirm.ask(f" Create venv at {venv_path}?"):
+        if subprocess.run([sys.executable, "-m", "venv", str(venv_path)]).returncode == 0:
+            console.print(" [ok]✔ venv created.[/]")
+            return 1
     return 0
 
 
-def _render_fix_summary(actions: int) -> None:
-    console.print()
+def _render_fix_summary(actions):
     if actions:
-        console.print(
-            Panel(f"[ok]✔  {actions} fix(es) applied successfully.[/]", border_style="ok")
-        )
+        console.print(Panel(f"[ok]✔ {actions} fixes applied.[/]", border_style="ok"))
     else:
-        console.print(Panel("[dim_text]No fixes were applied.[/]", border_style="rule"))
+        console.print(Panel("[dim_text]No fixes applied.[/]", border_style="rule"))
 
-
-# ──────────────────────────────────────────────────────────────
-# cache — cache management
-# ──────────────────────────────────────────────────────────────
 
 cache_app = typer.Typer(help="Manage the PyDoctor local cache.")
 app.add_typer(cache_app, name="cache")
 
 
 @cache_app.command("clear")
-def cache_clear() -> None:
-    """🗑  Clear the entire vulnerability/dependency cache."""
+def cache_clear():
     CacheManager().clear()
-    console.print("[ok]✔  Cache cleared.[/]")
+    console.print("[ok]✔ Cache cleared.[/]")
 
 
 @cache_app.command("purge")
-def cache_purge() -> None:
-    """🧹  Purge only expired cache entries."""
+def cache_purge():
     removed = CacheManager().purge_expired()
-    console.print(f"[ok]✔  Purged {removed} expired cache entr{'y' if removed==1 else 'ies'}.[/]")
-
-
-@cache_app.command("info")
-def cache_info() -> None:
-    """ℹ  Show cache file location and size."""
-    cache = CacheManager()
-    f = cache._cache_file
-    if f.is_file():
-        size = f.stat().st_size
-        console.print(f"  Cache file: [code]{f}[/]")
-        console.print(f"  Size:       [section]{size:,} bytes[/]")
-    else:
-        console.print("[dim_text]No cache file found yet.[/]")
-
-
-# ──────────────────────────────────────────────────────────────
-# version
-# ──────────────────────────────────────────────────────────────
+    console.print(f"[ok]✔ Purged {removed} entries.[/]")
 
 
 @app.command()
-def version() -> None:
-    """🏷  Print the PyDoctor version."""
+def version():
     console.print(f"🩺 [b]PyDoctor[/] version [cyan]{__version__}[/]")
 
 
-# ──────────────────────────────────────────────────────────────
-# Verbose detail renderer
-# ──────────────────────────────────────────────────────────────
-
-
-def _render_verbose_details(report: DiagnosisReport) -> None:
-    """
-    In verbose mode, print a full detail panel for every non-OK issue.
-    """
-    non_ok = [i for i in report.issues if i.severity not in (Severity.OK, Severity.INFO)]
-    if not non_ok:
-        return
-    console.print("\n[section]Detailed Issue Breakdown[/]\n")
-    for issue in non_ok:
-        render_issue_detail(issue)
-
-
-# ──────────────────────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────────────────────
-
-
-def main() -> None:
-    """CLI entry point called by the ``pydoctor`` script."""
+def main():
     app()
 
 

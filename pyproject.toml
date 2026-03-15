@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name        = "pydoctor-cli"
-version     = "0.1.3"
+version     = "2.0.0"
 description = "Premium Python environment diagnostic CLI — your project's personal physician."
 readme      = "README.md"
 license     = { file = "LICENSE" }
@@ -64,7 +64,7 @@ pydoctor = "pydoctor.cli.main:main"
 [project.urls]
 "Homepage"      = "https://pydoctor.vercel.app"
 "Repository"    = "https://github.com/iamAgbaCoder/pydoctor-cli"
-"Documentation" = "https://github.com/iamAgbaCoder/pydoctor-cli#readme"
+"Documentation" = "https://pydoctor.vercel.app/docs"
 "Bug Tracker"   = "https://github.com/iamAgbaCoder/pydoctor-cli/issues"
 "Changelog"     = "https://github.com/iamAgbaCoder/pydoctor-cli/releases"
 

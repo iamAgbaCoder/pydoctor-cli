@@ -74,6 +74,21 @@ pydoctor fix
 
 ## Release History
 
+### v2.0.0
+
+- **🚀 Major UI/UX Revamp**: Introduced a premium "kernel/hacker" aesthetic with boxed reports, dynamic progress animations, and improved readability.
+- **🛡️ CI/CD Guard Mode**: New `pydoctor check --ci` command to detect exposed secrets (AWS, GitHub, PyPI tokens) and insecure workflow patterns in GitHub Actions/GitLab CI.
+- **🐳 Docker Support**: New `pydoctor docker` command to diagnose Python issues inside containers and audit Dockerfiles.
+- **🐙 GitHub Integration**: New `pydoctor github` command for repository-wide health scans and local git configuration audits.
+- **📈 Advanced Health Scoring**: Refined the 0-100 scoring algorithm with granular penalties for security vulnerabilities and CI/CD risks.
+- **⚡ Performance Boost**: Parallel execution engine for scanning large codebases faster.
+- **🔍 Smart Environment Detection**: Now automatically prompts users when no venv is found, preventing accidental system-wide changes.
+- **🎯 Context-Aware Reporting**: Targeted commands (like `pydoctor scan-unused` or `pydoctor github`) now intelligently suppress unrelated scanner noise.
+- **🧠 OSV Deep-Fetching**: Overcame upstream OSV API batch limits by implementing dynamic real-time fetching and caching of full vulnerability advisories natively.
+- **🔗 Transitive Dependency Tracking**: PyDoctor now uniquely segregates mathematical/transitive dependencies from pure unused bloat, effectively preventing `pydoctor fix` from uninstalling required sub-packages.
+- **🛠️ Refined Git Discovery**: Utilizes native git heuristics (`--is-inside-work-tree` & `--show-toplevel`) to flawlessly map out project roots and repository states, even when scanning from deeply nested sub-directories.
+- **🔮 Dynamic Fix Suggestions**: The `🚀 Next Steps` terminal guide now dynamically rules out the currently running command and gracefully self-hides when a project achieves a perfect 100/100 health rating.
+
 ### v0.1.3
 
 - **Enhanced Package Detection**: Pydoctor now intelligently detects and uses your project's specific virtual environment (Poetry, UV, PDM, or standard venv) to run all scans and diagnoses.

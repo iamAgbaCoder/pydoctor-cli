@@ -8,9 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from pydoctor.config.settings import Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.scanners import unused_package_scanner
 

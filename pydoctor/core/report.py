@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
+from typing import Any
 
 from pydoctor.config.settings import Severity
 
@@ -86,6 +87,8 @@ class DiagnosisReport:
     scanned_at: str = field(default_factory=lambda: datetime.datetime.utcnow().isoformat() + "Z")
     scan_duration_ms: float = 0.0
     scanner_meta: dict = field(default_factory=dict)
+    ctx: Any = None
+    command: str | None = None
 
     # ── Convenience helpers ────────────────────────────────────
 

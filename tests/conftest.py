@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -16,9 +15,9 @@ import pytest
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from pydoctor.core.project import ProjectContext
-from pydoctor.core.report import DiagnosisReport, Issue
-from pydoctor.config.settings import Severity
+from pydoctor.config.settings import Severity  # noqa: E402
+from pydoctor.core.project import ProjectContext  # noqa: E402
+from pydoctor.core.report import DiagnosisReport, Issue  # noqa: E402
 
 # ── Fixtures ───────────────────────────────────────────────────
 

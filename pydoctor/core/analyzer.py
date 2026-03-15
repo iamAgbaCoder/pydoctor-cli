@@ -24,6 +24,7 @@ from pydoctor.config.settings import MAX_WORKERS, Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import DiagnosisReport, Issue
 from pydoctor.scanners import (
+    ci_scanner,
     dependency_scanner,
     env_scanner,
     outdated_package_scanner,
@@ -43,6 +44,7 @@ SCANNER_REGISTRY: dict[str, Callable[[ProjectContext], list[Issue]]] = {
     "outdated": outdated_package_scanner.scan,
     "security": vulnerability_scanner.scan,
     "unused": unused_package_scanner.scan,
+    "ci": ci_scanner.scan,
 }
 
 
@@ -91,7 +93,7 @@ class Analyzer:
 
         # Build project context once — shared across all scanners
         ctx = ProjectContext.from_path(self._project_path)
-        report = DiagnosisReport(scan_path=str(ctx.root))
+        report = DiagnosisReport(scan_path=str(ctx.root), ctx=ctx)
         scanner_timings: dict[str, float] = {}
 
         # Parallel execution for independence (each scanner gets its own thread)
