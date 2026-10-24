@@ -104,3 +104,70 @@ class TestUnusedPackageScanner:
         # flask is imported via from-import, requests is not
         assert "requests" in pkg_names
         assert "flask" not in pkg_names
+
+
+class TestFrameworkAwareDetection:
+    """Dependencies used without a plain ``import`` must not be flagged."""
+
+    def test_import_name_differs_from_distribution(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            unused_package_scanner,
+            "_distribution_map",
+            lambda ctx: {"decouple": ["python-decouple"]},
+        )
+        ctx = _make_ctx(
+            tmp_path,
+            py_files=[("settings.py", "from decouple import config\n")],
+            declared={"python-decouple": ""},
+        )
+        unused = [i.package for i in unused_package_scanner.scan(ctx) if i.code == "UNUSED_PACKAGE"]
+        assert "python-decouple" not in unused
+
+    def test_module_path_strings_count_as_usage(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            unused_package_scanner,
+            "_distribution_map",
+            lambda ctx: {
+                "whitenoise": ["whitenoise"],
+                "corsheaders": ["django-cors-headers"],
+                "django_redis": ["django-redis"],
+            },
+        )
+        settings = (
+            'INSTALLED_APPS = ["corsheaders"]\n'
+            'MIDDLEWARE = ["whitenoise.middleware.WhiteNoiseMiddleware"]\n'
+            'CACHES = {"default": {"BACKEND": "django_redis.cache.RedisCache"}}\n'
+        )
+        ctx = _make_ctx(
+            tmp_path,
+            py_files=[("settings.py", settings)],
+            declared={"whitenoise": "", "django-cors-headers": "", "django-redis": "", "six": ""},
+        )
+        unused = [i.package for i in unused_package_scanner.scan(ctx) if i.code == "UNUSED_PACKAGE"]
+        assert unused == ["six"]
+
+    def test_arbitrary_strings_do_not_mark_packages_used(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(unused_package_scanner, "_distribution_map", lambda ctx: {})
+        ctx = _make_ctx(
+            tmp_path,
+            py_files=[("main.py", 'GREETING = "six"\n')],
+            declared={"six": ""},
+        )
+        unused = [i.package for i in unused_package_scanner.scan(ctx) if i.code == "UNUSED_PACKAGE"]
+        assert unused == ["six"]
+
+    def test_server_named_in_procfile_is_used(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(unused_package_scanner, "_distribution_map", lambda ctx: {})
+        (tmp_path / "Procfile").write_text("web: gunicorn app.wsgi\n", encoding="utf-8")
+        ctx = _make_ctx(
+            tmp_path,
+            py_files=[("main.py", "x = 1\n")],
+            declared={"gunicorn": "", "uvicorn": ""},
+        )
+        unused = [i.package for i in unused_package_scanner.scan(ctx) if i.code == "UNUSED_PACKAGE"]
+        assert unused == ["uvicorn"]
+
+    def test_title_has_no_rich_markup(self, tmp_path):
+        ctx = _make_ctx(tmp_path, py_files=[("main.py", "import os\n")], declared={"pandas": ""})
+        for issue in unused_package_scanner.scan(ctx):
+            assert "[dim]" not in issue.title and "[/]" not in issue.title

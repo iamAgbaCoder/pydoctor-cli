@@ -10,6 +10,7 @@ actually imported somewhere in the project source.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from pydoctor.utils.file_utils import read_file_safe
@@ -70,6 +71,36 @@ def extract_imports_from_project(python_files: list[Path]) -> set[str]:
     for fpath in python_files:
         all_imports.update(extract_imports_from_file(fpath))
     return all_imports
+
+
+_MODULE_STRING = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+
+
+def extract_string_module_refs(python_files: list[Path]) -> set[str]:
+    """
+    Collect top-level names from string constants that look like module paths.
+
+    Frameworks load many dependencies by name rather than by ``import``:
+    Django's ``INSTALLED_APPS = ["corsheaders"]``, ``MIDDLEWARE = ["whitenoise.middleware..."]``
+    and ``"BACKEND": "django_redis.cache.RedisCache"`` are all plain strings.
+    Callers should only treat a returned name as a dependency reference when it
+    matches the import name of an installed distribution.
+    """
+    names: set[str] = set()
+    for fpath in python_files:
+        source = read_file_safe(fpath)
+        if source is None:
+            continue
+        try:
+            tree = ast.parse(source)
+        except (SyntaxError, ValueError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                value = node.value.strip()
+                if 0 < len(value) <= 200 and _MODULE_STRING.match(value):
+                    names.add(value.split(".", 1)[0])
+    return names
 
 
 # ──────────────────────────────────────────────────────────────

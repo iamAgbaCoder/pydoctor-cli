@@ -24,6 +24,7 @@ Global flags
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -37,6 +38,7 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
         pass
 
 import typer
+from packaging.version import InvalidVersion, Version
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
@@ -60,6 +62,7 @@ from pydoctor.reports.table_formatter import (
 )
 from pydoctor.reports.terminal_colors import PYDOCTOR_THEME
 from pydoctor.utils.pip_utils import (
+    get_installed_packages,
     remove_from_requirements_file,
     update_requirements_file,
 )
@@ -385,12 +388,18 @@ def fix(
     if packages:
         _filter_issues_by_targets(report_data, packages)
     actions = 0
-    actions += _fix_vulnerabilities(report_data, ctx, safe)
+    handled: set[str] = set()
+    actions += _fix_vulnerabilities(report_data, ctx, safe, handled)
     if upgrade:
-        actions += _fix_outdated(report_data, ctx, safe)
+        actions += _fix_outdated(report_data, ctx, safe, handled)
     actions += _fix_dependencies(report_data, ctx, safe)
-    if remove or packages:
+    if remove:
         actions += _fix_unused(report_data, ctx, safe)
+    elif any(i.code == "UNUSED_PACKAGE" for i in report_data.issues):
+        console.print(
+            "\n[dim_text]Possibly unused packages were found but not removed. "
+            "Review them, then run `pydoctor fix --remove` to remove them.[/]"
+        )
     actions += _fix_venv(report_data, path, safe)
     _render_fix_summary(actions)
 
@@ -405,34 +414,117 @@ def _filter_issues_by_targets(report_data, packages):
         raise typer.Exit()
 
 
-def _run_package_manager_command(ctx, pkg, action, upgrade=False):
-    path = str(ctx.root)
-    if ctx.is_poetry:
-        cmd = ["poetry", "add", pkg] if action == "add" else ["poetry", "remove", pkg]
-        if action == "update":
-            cmd = ["poetry", "update", pkg]
-        console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
-        return subprocess.run(cmd, cwd=path)
+def _manager_command(ctx, pkg, action, upgrade=False, min_version=None):
+    """
+    Build the uv / Poetry / pdm command for one package, or None for plain pip.
+
+    When ``min_version`` is given for an add/update, the requirement is passed as
+    ``pkg>=min_version`` so the constraint in pyproject.toml is rewritten. A bare
+    ``uv add --upgrade pkg`` keeps an existing pin such as ``pkg==1.0`` and
+    silently changes nothing.
+    """
+    requirement = f"{pkg}>={min_version}" if min_version else pkg
     if ctx.is_uv:
-        cmd = ["uv", "add", pkg] if action == "add" else ["uv", "remove", pkg]
-        if upgrade:
-            cmd = ["uv", "add", "--upgrade", pkg]
+        if action == "remove":
+            return ["uv", "remove", pkg]
+        if upgrade and not min_version:
+            return ["uv", "add", "--upgrade-package", pkg, pkg]
+        return ["uv", "add", requirement]
+    for tool, enabled in (("poetry", ctx.is_poetry), ("pdm", ctx.is_pdm)):
+        if enabled:
+            if action == "remove":
+                return [tool, "remove", pkg]
+            if action == "update" and not min_version:
+                return [tool, "update", pkg]
+            return [tool, "add", requirement]
+    return None
+
+
+def _run_package_manager_command(ctx, pkg, action, upgrade=False, min_version=None):
+    """Run the project's package manager (or pip) for one package."""
+    cmd = _manager_command(ctx, pkg, action, upgrade, min_version)
+    if cmd:
         console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
-        return subprocess.run(cmd, cwd=path)
-    if ctx.is_pdm:
-        cmd = ["pdm", "add", pkg] if action == "add" else ["pdm", "remove", pkg]
-        if action == "update":
-            cmd = ["pdm", "update", pkg]
-        console.print(f"  [dim_text]Running: {' '.join(cmd)}[/]")
-        return subprocess.run(cmd, cwd=path)
+        return subprocess.run(cmd, cwd=str(ctx.root))
     if action == "remove":
         return run_pip_command(["uninstall", "-y", pkg], python_executable=ctx.project_python)
-    else:
-        args = ["install"]
-        if upgrade:
-            args.append("--upgrade")
-        args.append(pkg)
-        return run_pip_command(args, python_executable=ctx.project_python)
+    args = ["install"]
+    if upgrade:
+        args.append("--upgrade")
+    args.append(f"{pkg}>={min_version}" if min_version else pkg)
+    console.print(f"  [dim_text]Running: pip {' '.join(args)}[/]")
+    return run_pip_command(args, python_executable=ctx.project_python)
+
+
+def _norm(name: str) -> str:
+    """Normalise a distribution name (PEP 503)."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _installed_version(ctx, pkg: str) -> str | None:
+    """Return the version of ``pkg`` installed in the project's environment."""
+    target = _norm(pkg)
+    for name, version in get_installed_packages(python_executable=ctx.project_python).items():
+        if _norm(name) == target:
+            return version
+    return None
+
+
+def _declared_constraint(ctx, pkg: str) -> str | None:
+    """Find how ``pkg`` is declared in pyproject.toml or requirements.txt, if at all."""
+    name = re.escape(pkg).replace(r"\-", "[-_.]").replace(r"\_", "[-_.]")
+    pattern = re.compile(
+        rf"""^\s*["']?({name}\s*(\[[^\]]*\])?\s*[<>=!~^][^"'#,\n]*(,[^"'#\n]*)?)""", re.I | re.M
+    )
+    for fname in ("pyproject.toml", "requirements.txt"):
+        fpath = ctx.root / fname
+        if fpath.is_file():
+            match = pattern.search(fpath.read_text(encoding="utf-8", errors="ignore"))
+            if match:
+                return match.group(1).strip().rstrip(",").strip()
+    return None
+
+
+def _max_version(versions):
+    best = None
+    for v in versions:
+        try:
+            parsed = Version(v)
+        except (InvalidVersion, TypeError):
+            continue
+        if best is None or parsed > best:
+            best = parsed
+    return str(best) if best else None
+
+
+def _apply_and_verify(ctx, pkg, action, min_version, verb):
+    """
+    Run the upgrade, then confirm the installed version actually changed.
+
+    A package manager can exit 0 without changing anything (for example when a
+    pin in pyproject.toml blocks the upgrade), so the exit code alone is not
+    proof of a fix.
+    """
+    before = _installed_version(ctx, pkg)
+    result = _run_package_manager_command(ctx, pkg, action, True, min_version)
+    if result.returncode != 0:
+        console.print(f" [error]✖ {pkg} could not be {verb} (exit code {result.returncode}).[/]")
+        return False
+    after = _installed_version(ctx, pkg)
+    if before and after == before:
+        console.print(
+            f" [warning]⚠ {pkg} is still {after}. The command succeeded but nothing changed.[/]"
+        )
+        constraint = _declared_constraint(ctx, pkg)
+        if constraint:
+            console.print(
+                f'   [dim_text]Your project declares "{constraint}", which blocks the upgrade. '
+                f"Loosen it, then run `pydoctor fix {pkg}` again.[/]"
+            )
+        return False
+    change = f"{before} → {after}" if before and after else (after or "")
+    console.print(f" [ok]✔ {pkg} {verb}{f' ({change})' if change else ''}.[/]")
+    return True
 
 
 def _update_pip_requirements(ctx, pkg, safe, action, version_spec=""):
@@ -449,27 +541,51 @@ def _update_pip_requirements(ctx, pkg, safe, action, version_spec=""):
             update_requirements_file(req_file, pkg, version_spec)
 
 
-def _fix_vulnerabilities(report, ctx, safe):
-    vulnerable = [i for i in report.issues if i.code == "SEC_VULNERABILITY"]
-    if not vulnerable:
+def _fix_vulnerabilities(report, ctx, safe, handled=None):
+    """Offer one upgrade per vulnerable package, to the lowest version that fixes every advisory."""
+    handled = handled if handled is not None else set()
+    groups: dict[str, list] = {}
+    for i in report.issues:
+        if i.code == "SEC_VULNERABILITY" and i.package:
+            groups.setdefault(i.package, []).append(i)
+    if not groups:
         return 0
+    latest = {
+        _norm(i.package): i.extra.get("latest_version")
+        for i in report.issues
+        if i.code == "PKG_OUTDATED" and i.package
+    }
     actions = 0
-    for i in vulnerable:
-        if i.package and (not safe or Confirm.ask(f" Fix {i.package}?")):
-            if _run_package_manager_command(ctx, i.package, "add", True).returncode == 0:
-                console.print(f" [ok]✔ {i.package} fixed.[/]")
+    for pkg, issues in groups.items():
+        fixed = [i.extra.get("fixed_in") for i in issues if i.extra.get("fixed_in")]
+        target = _max_version(fixed) or latest.get(_norm(pkg))
+        critical = sum(1 for i in issues if i.severity == "critical")
+        summary = f"{len(issues)} advisor{'y' if len(issues) == 1 else 'ies'}"
+        if critical:
+            summary += f", {critical} critical"
+        if len(fixed) < len(issues):
+            summary += f", {len(issues) - len(fixed)} with no fix released yet"
+        to = f" to {target}" if target else ""
+        handled.add(_norm(pkg))
+        if not safe or Confirm.ask(f" Upgrade {pkg}{to}? ({summary})"):
+            if _apply_and_verify(ctx, pkg, "add", target, "upgraded"):
                 actions += 1
     return actions
 
 
-def _fix_outdated(report, ctx, safe):
+def _fix_outdated(report, ctx, safe, handled=None):
+    handled = handled if handled is not None else set()
     outdated = [i for i in report.issues if i.code == "PKG_OUTDATED"]
     actions = 0
     for i in outdated:
         pkg = i.package
-        if pkg and (not safe or Confirm.ask(f" Upgrade {pkg}?")):
-            if _run_package_manager_command(ctx, pkg, "update", True).returncode == 0:
-                console.print(f" [ok]✔ {pkg} upgraded.[/]")
+        if not pkg or _norm(pkg) in handled:
+            continue
+        handled.add(_norm(pkg))
+        target = i.extra.get("latest_version")
+        to = f" to {target}" if target else ""
+        if not safe or Confirm.ask(f" Upgrade {pkg}{to}?"):
+            if _apply_and_verify(ctx, pkg, "update", target, "upgraded"):
                 actions += 1
     return actions
 
