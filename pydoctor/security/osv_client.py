@@ -99,6 +99,11 @@ class OSVClient:
         self._cache = cache or CacheManager()
         self._timeout = timeout
         self._session = requests.Session()
+        # Packages whose OSV lookup could not be completed (network error,
+        # timeout, or a non-2xx response after all retries). Callers must
+        # check this: an empty result list does NOT mean "no vulnerabilities"
+        # when this list is non-empty.
+        self.failed_packages: list[str] = []
         self._session.headers.update(
             {
                 "Content-Type": "application/json",
@@ -123,8 +128,10 @@ class OSVClient:
         Returns
         -------
         list[VulnerabilityRecord]
-            All vulnerabilities found.  Empty list if none / network error.
+            All vulnerabilities found. Packages that could not be checked
+            are recorded in ``self.failed_packages``.
         """
+        self.failed_packages = []
         if not packages:
             return []
 
@@ -196,7 +203,10 @@ class OSVClient:
                 break
             except (requests.RequestException, ValueError):
                 if attempt == retries - 1:
-                    # Final attempt failed — return whatever we got from cache
+                    # Final attempt failed. Record the packages we could not
+                    # check so the scanner can report an incomplete scan
+                    # instead of a clean bill of health.
+                    self.failed_packages.extend(name for name, _ in to_fetch)
                     return records
                 # Simple exponential backoff: 1s, 2s, 4s...
                 time.sleep(2**attempt)
