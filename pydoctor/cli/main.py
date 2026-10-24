@@ -82,7 +82,7 @@ _HELP_EPILOG = """
 [section]🏥  COMMUNITY & SUPPORT[/]
 
   [label]Docs:[/][pkg] https://pydoctor.vercel.app/docs[/]
-  [label]Version:[/][info] v2.0.0 (Premium Kernel Edition)[/]
+  [label]Version:[/][info] v2.0.1 (Premium Kernel Edition)[/]
 
 [kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
 """

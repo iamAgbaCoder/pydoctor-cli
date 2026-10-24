@@ -74,6 +74,10 @@ pydoctor fix
 
 ## Release History
 
+### v2.0.1
+- **Security scans fail closed:** if the OSV database can't be reached, pydoctor now reports `SEC_SCAN_INCOMPLETE` (error, exit 1) instead of a clean result.
+- **No more double-counted advisories:** advisories listed under several IDs (e.g. GHSA and PYSEC) are reported and scored once.
+
 ### v2.0.0
 
 - **🚀 Major UI/UX Revamp**: Introduced a premium "kernel/hacker" aesthetic with boxed reports, dynamic progress animations, and improved readability.
