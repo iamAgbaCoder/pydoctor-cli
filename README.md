@@ -74,6 +74,12 @@ pydoctor fix
 
 ## Release History
 
+### v2.1.0
+- **`pydoctor fix` reports what really happened:** upgrades are verified against the installed version. If a pin in `pyproject.toml` blocks an upgrade, pydoctor says so and shows the constraint instead of printing "fixed".
+- **One prompt per package:** vulnerable packages are offered once, with the advisory count, and upgraded to the lowest version that fixes every advisory.
+- **No accidental removals:** `pydoctor fix <package>` no longer offers to uninstall it. Removal only runs with `--remove`.
+- **Fewer false "unused" reports:** packages imported under a different name (`decouple`), loaded from strings (Django `INSTALLED_APPS`, `MIDDLEWARE`, backends), or run from a Procfile/Dockerfile (`gunicorn`) are recognised as used. Remaining findings are labelled "Possibly unused".
+
 ### v2.0.1
 - **Security scans fail closed:** if the OSV database can't be reached, pydoctor now reports `SEC_SCAN_INCOMPLETE` (error, exit 1) instead of a clean result.
 - **No more double-counted advisories:** advisories listed under several IDs (e.g. GHSA and PYSEC) are reported and scored once.
