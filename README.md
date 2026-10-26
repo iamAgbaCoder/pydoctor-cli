@@ -4,6 +4,7 @@
 
 **PyDoctor** is a standalone, developer-friendly diagnostic assistant for Python environments. It acts like a personal physician for your code — scanning your project and environment to prescribe fixes for misconfigurations, dependencies, and security vulnerabilities.
 
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/pydoctor-cli?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/pydoctor-cli)
 [![CI Status](https://github.com/iamAgbaCoder/pydoctor-cli/actions/workflows/publish.yml/badge.svg)](https://github.com/iamAgbaCoder/pydoctor-cli/actions)
 [![PyPI version](https://img.shields.io/pypi/v/pydoctor-cli.svg?color=blue&style=flat-square)](https://pypi.org/project/pydoctor-cli/)
 [![Python versions](https://img.shields.io/pypi/pyversions/pydoctor-cli.svg?style=flat-square)](https://pypi.org/project/pydoctor-cli/)
