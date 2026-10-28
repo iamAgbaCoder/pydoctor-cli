@@ -84,7 +84,7 @@ _HELP_EPILOG = """
 
 [section]🏥  COMMUNITY & SUPPORT[/]
 
-  [label]Docs:[/][pkg] https://pydoctor.vercel.app/docs[/]
+  [label]Docs:[/][pkg] https://pydoctor-docs.thally.app[/]
   [label]Version:[/][info] v2.1.0 (Premium Kernel Edition)[/]
 
 [kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
@@ -293,7 +293,7 @@ def docker(
     image: Annotated[str | None, typer.Argument(help="Docker image to scan (optional).")] = None,
     path: Annotated[str, _PATH_ARG] = ".",
 ) -> None:
-    """🐳  Diagnose Python issues inside **Docker** containers."""
+    """🐳  [Preview] Check that a Dockerfile exists and uses a Python base image."""
     console.print(Panel("[section]🐳 Docker Environment Doctor[/]", border_style="rule"))
     console.print("[kernel]Scanning for Dockerfile and container runtime...[/]")
     dockerfile = Path(path) / "Dockerfile"
@@ -308,7 +308,10 @@ def docker(
             )
         else:
             console.print("[ok]✔[/] Python base image identified.")
-    console.print("\n[info]ℹ This feature is in beta. Full container introspection coming soon.[/]")
+    console.print(
+        "\n[info]ℹ Preview: this only checks the Dockerfile. It doesn't inspect images or "
+        "containers yet.[/]"
+    )
 
 
 @app.command(rich_help_panel="SECURITY & CI/CD")
@@ -319,7 +322,12 @@ def github(
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
-    """🐙  Integrate with **GitHub** for repository-wide health scans."""
+    """🐙  Run the CI/CD guard on a local git checkout."""
+    if repo:
+        err_console.print(
+            "[warning]⚠ Scanning remote repositories isn't supported yet; "
+            f"ignoring {repo} and scanning {path}.[/]"
+        )
     if not json:
         console.print(Panel("[section]🐙 GitHub Repository Doctor[/]", border_style="rule"))
         if not repo:

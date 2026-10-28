@@ -76,17 +76,9 @@ def extract_imports_from_project(python_files: list[Path]) -> set[str]:
 _MODULE_STRING = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
 
 
-def extract_string_module_refs(python_files: list[Path]) -> set[str]:
-    """
-    Collect top-level names from string constants that look like module paths.
-
-    Frameworks load many dependencies by name rather than by ``import``:
-    Django's ``INSTALLED_APPS = ["corsheaders"]``, ``MIDDLEWARE = ["whitenoise.middleware..."]``
-    and ``"BACKEND": "django_redis.cache.RedisCache"`` are all plain strings.
-    Callers should only treat a returned name as a dependency reference when it
-    matches the import name of an installed distribution.
-    """
-    names: set[str] = set()
+def extract_string_constants(python_files: list[Path], max_len: int = 200) -> set[str]:
+    """All short string constants in the project's Python files (stripped)."""
+    values: set[str] = set()
     for fpath in python_files:
         source = read_file_safe(fpath)
         if source is None:
@@ -98,9 +90,27 @@ def extract_string_module_refs(python_files: list[Path]) -> set[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 value = node.value.strip()
-                if 0 < len(value) <= 200 and _MODULE_STRING.match(value):
-                    names.add(value.split(".", 1)[0])
-    return names
+                if 0 < len(value) <= max_len:
+                    values.add(value)
+    return values
+
+
+def module_refs_from_strings(strings: set[str]) -> set[str]:
+    """
+    Top-level names from strings that look like module paths.
+
+    Frameworks load many dependencies by name rather than by ``import``:
+    Django's ``INSTALLED_APPS = ["corsheaders"]``, ``MIDDLEWARE = ["whitenoise.middleware..."]``
+    and ``"BACKEND": "django_redis.cache.RedisCache"`` are all plain strings.
+    Callers should only treat a returned name as a dependency reference when it
+    matches the import name of an installed distribution.
+    """
+    return {v.split(".", 1)[0] for v in strings if _MODULE_STRING.match(v)}
+
+
+def extract_string_module_refs(python_files: list[Path]) -> set[str]:
+    """Backwards-compatible wrapper: module refs found in ``python_files``."""
+    return module_refs_from_strings(extract_string_constants(python_files))
 
 
 # ──────────────────────────────────────────────────────────────

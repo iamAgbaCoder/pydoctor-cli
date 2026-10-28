@@ -94,7 +94,8 @@ def _render_kernel_logs(report: DiagnosisReport) -> None:
     os_name = report.ctx.os_name if report.ctx else "Unknown"
 
     console.print(f"STDOUT: [stdout][SUCCESS][/] Runtime: Python {py_ver} ({os_name})")
-    console.print("STDOUT: [stdout][SUCCESS][/] Entropy Check: PASS")
+    if report.ctx and getattr(report.ctx, "python_executable", None):
+        console.print(f"STDOUT: [stdout][SUCCESS][/] Interpreter: {report.ctx.python_executable}")
     console.print("\n[kernel]Orchestrating Dependency Audit...[/]")
 
 

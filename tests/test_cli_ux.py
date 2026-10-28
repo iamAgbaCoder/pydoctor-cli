@@ -59,3 +59,14 @@ def test_diagnose_never_prompts_when_not_interactive(tmp_path):
         assert "No virtual environment detected" in result.stdout
         ask.assert_not_called()
         mock_scan.assert_called_once()
+
+
+def test_github_says_remote_repos_are_not_supported(tmp_path):
+    with (
+        patch("pydoctor.cli.main._run_scan") as scan,
+        patch("pydoctor.cli.main._output"),
+        patch("pydoctor.cli.main._exit_code", return_value=0),
+    ):
+        result = runner.invoke(app, ["github", "https://github.com/x/y", "--path", str(tmp_path)])
+    assert "isn't supported yet" in result.output
+    scan.assert_called_once()

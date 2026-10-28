@@ -62,9 +62,9 @@ dev = [
 pydoctor = "pydoctor.cli.main:main"
 
 [project.urls]
-"Homepage"      = "https://pydoctor.vercel.app"
+"Homepage"      = "https://pydoctor-docs.thally.app"
 "Repository"    = "https://github.com/iamAgbaCoder/pydoctor-cli"
-"Documentation" = "https://pydoctor.vercel.app/docs"
+"Documentation" = "https://pydoctor-docs.thally.app"
 "Bug Tracker"   = "https://github.com/iamAgbaCoder/pydoctor-cli/issues"
 "Changelog"     = "https://github.com/iamAgbaCoder/pydoctor-cli/releases"
 

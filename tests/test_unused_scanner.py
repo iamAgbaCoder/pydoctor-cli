@@ -171,3 +171,22 @@ class TestFrameworkAwareDetection:
         ctx = _make_ctx(tmp_path, py_files=[("main.py", "import os\n")], declared={"pandas": ""})
         for issue in unused_package_scanner.scan(ctx):
             assert "[dim]" not in issue.title and "[/]" not in issue.title
+
+
+class TestBackendDrivers:
+    """Drivers chosen by a settings string that never names the package."""
+
+    def test_database_driver_hasher_and_cache_client(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(unused_package_scanner, "_distribution_map", lambda ctx: {})
+        settings = (
+            'DATABASES = {"default": {"ENGINE": "django.db.backends.postgresql"}}\n'
+            'PASSWORD_HASHERS = ["django.contrib.auth.hashers.Argon2PasswordHasher"]\n'
+            'CELERY_BROKER_URL = "redis://localhost:6379/0"\n'
+        )
+        ctx = _make_ctx(
+            tmp_path,
+            py_files=[("settings.py", settings)],
+            declared={"psycopg2-binary": "", "argon2-cffi": "", "redis": "", "six": ""},
+        )
+        unused = [i.package for i in unused_package_scanner.scan(ctx) if i.code == "UNUSED_PACKAGE"]
+        assert unused == ["six"]
