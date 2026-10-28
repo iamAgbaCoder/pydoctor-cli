@@ -130,12 +130,14 @@ class Analyzer:
         verbose: bool = False,
         python: str | None = None,
         ctx: ProjectContext | None = None,
+        no_cache: bool = False,
     ) -> None:
         self._project_path = project_path
         self._scanner_keys = scanners or list(SCANNER_REGISTRY.keys())
         self._verbose = verbose
         self._python = python
         self._ctx = ctx
+        self._no_cache = no_cache
 
     # ── Public API ─────────────────────────────────────────────
 
@@ -155,6 +157,7 @@ class Analyzer:
 
         # Build project context once — shared across all scanners
         ctx = self._ctx or ProjectContext.from_path(self._project_path, python=self._python)
+        ctx.no_cache = self._no_cache
         report = DiagnosisReport(scan_path=str(ctx.root), ctx=ctx)
         scanner_timings: dict[str, float] = {}
         report.extend(context_issues(ctx, self._scanner_keys))

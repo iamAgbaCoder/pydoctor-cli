@@ -21,16 +21,26 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import requests
+from packaging.version import InvalidVersion, Version
 
 from pydoctor.cache.cache_manager import CacheManager
 from pydoctor.config.settings import (
+    MAX_WORKERS,
     OSV_API_URL,
     OSV_BATCH_SIZE,
     REQUEST_TIMEOUT,
 )
+from pydoctor.security.cvss import base_score, rating
+
+OSV_VULN_URL = "https://api.osv.dev/v1/vulns/{id}"
+
+# Bump when the parsed record format or severity logic changes, so results
+# cached by an older PyDoctor are not reused.
+_CACHE_SCHEMA = "v2"
 
 # ──────────────────────────────────────────────────────────────
 # Data model
@@ -62,6 +72,7 @@ class VulnerabilityRecord:
     aliases: list[str] = field(default_factory=list)
     fixed_in: str = ""
     references: list[str] = field(default_factory=list)
+    cvss_score: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -73,6 +84,7 @@ class VulnerabilityRecord:
             "aliases": self.aliases,
             "fixed_in": self.fixed_in,
             "references": self.references,
+            "cvss_score": self.cvss_score,
         }
 
 
@@ -95,9 +107,12 @@ class OSVClient:
         self,
         cache: CacheManager | None = None,
         timeout: int = REQUEST_TIMEOUT,
+        read_cache: bool = True,
     ) -> None:
         self._cache = cache or CacheManager()
         self._timeout = timeout
+        # False for --no-cache: ignore cached results but still refresh them.
+        self._read_cache = read_cache
         self._session = requests.Session()
         # Packages whose OSV lookup could not be completed (network error,
         # timeout, or a non-2xx response after all retries). Callers must
@@ -149,7 +164,7 @@ class OSVClient:
 
     def _cache_key(self, name: str, version: str) -> str:
         """Build a deterministic cache key for a package+version pair."""
-        raw = f"osv:{name}:{version}"
+        raw = f"osv:{_CACHE_SCHEMA}:{name}:{version}"
         return hashlib.md5(raw.encode()).hexdigest()
 
     def _query_batch(  # noqa: C901
@@ -168,7 +183,7 @@ class OSVClient:
         # Check cache first
         for name, version in packages.items():
             key = self._cache_key(name, version)
-            cached = self._cache.get(key)
+            cached = self._cache.get(key) if self._read_cache else None
             if cached is not None:
                 records.extend([VulnerabilityRecord(**v) for v in cached])
             else:
@@ -211,32 +226,50 @@ class OSVClient:
                 # Simple exponential backoff: 1s, 2s, 4s...
                 time.sleep(2**attempt)
 
+        # The batch endpoint often returns only ids. Fetch the full advisories
+        # in parallel (one request per unique id), not one at a time.
+        sparse_ids = {
+            v["id"]
+            for result in results
+            for v in result.get("vulns", [])
+            if "id" in v and "summary" not in v and "details" not in v
+        }
+        full = self._fetch_advisories(sorted(sparse_ids))
+
         # Parse results — one result entry per queried package (in order)
         for (name, version), result in zip(to_fetch, results, strict=False):
-            vulns = result.get("vulns", [])
             parsed = []
-            for v in vulns:
-                # The batch endpoint sometimes returns sparsely populated records (e.g., just 'id' and 'modified').
-                # If crucial fields are missing, fetch the full advisory record.
-                if "summary" not in v and "details" not in v and "id" in v:
-                    try:
-                        resp = self._session.get(
-                            f"https://api.osv.dev/v1/vulns/{v['id']}", timeout=self._timeout
-                        )
-                        if resp.status_code == 200:
-                            v = resp.json()
-                    except (requests.RequestException, ValueError):
-                        pass
-
+            for v in result.get("vulns", []):
+                v = full.get(v.get("id", ""), v)
+                if v.get("withdrawn"):
+                    continue
                 parsed.append(self._parse_vuln(v, name, version))
 
             records.extend(parsed)
 
             # Cache the parsed results (as dicts for JSON-serialisability)
             key = self._cache_key(name, version)
-            self._cache.set(key, [p.to_dict() for p in parsed])
+            self._cache.set(key, [p.to_dict() for p in parsed], save=False)
 
+        self._cache.save()
         return records
+
+    def _fetch_advisories(self, ids: list[str]) -> dict[str, dict]:
+        """Fetch full OSV records for ``ids`` concurrently; failures are skipped."""
+
+        def fetch(vuln_id: str) -> tuple[str, dict | None]:
+            try:
+                resp = self._session.get(OSV_VULN_URL.format(id=vuln_id), timeout=self._timeout)
+                if resp.status_code == 200:
+                    return vuln_id, resp.json()
+            except (requests.RequestException, ValueError):
+                pass
+            return vuln_id, None
+
+        if not ids:
+            return {}
+        with ThreadPoolExecutor(max_workers=max(1, min(MAX_WORKERS, len(ids)))) as pool:
+            return {vid: data for vid, data in pool.map(fetch, ids) if data}
 
     def _parse_vuln(
         self,
@@ -266,7 +299,7 @@ class OSVClient:
         refs = [r.get("url", "") for r in raw.get("references", []) if r.get("url")]
 
         # Determine severity from database_specific or CVSS data
-        severity = _extract_severity(raw)
+        severity, score = _extract_severity(raw)
 
         # Find fixed version from affected → ranges
         fixed_in = _extract_fixed_version(raw, package, version)
@@ -280,6 +313,7 @@ class OSVClient:
             aliases=aliases,
             fixed_in=fixed_in,
             references=refs[:5],  # cap at 5 references for display
+            cvss_score=score,
         )
 
 
@@ -288,57 +322,102 @@ class OSVClient:
 # ──────────────────────────────────────────────────────────────
 
 
-def _extract_severity(raw: dict) -> str:
+def _extract_severity(raw: dict) -> tuple[str, float | None]:
     """
-    Extract a human-readable severity level from the OSV vuln JSON.
+    Return ``(severity_label, cvss_score)`` for an OSV record.
 
-    OSV severities live in various places depending on the source database.
-    We try several paths and default to "UNKNOWN".
+    Order: the advisory database's own label (GHSA records carry one), then
+    the CVSS v3 base score computed from the vector. CVSS v4 and v2 vectors
+    aren't scored; without a database label they are reported as UNKNOWN
+    rather than guessed.
     """
-    # Try database_specific (common for GHSA)
-    db_specific = raw.get("database_specific", {})
-    if severity := db_specific.get("severity"):
-        return str(severity).upper()
-
-    # Try CVSS v3 via "severity" array
+    score = None
     for sev_entry in raw.get("severity", []):
-        score_type = sev_entry.get("type", "")
-        score_str = sev_entry.get("score", "")
-        if "CVSS" in score_type and score_str:
-            # score_str is like "CVSS:3.1/AV:N/AC:L/..."
-            return _cvss_to_label(score_str)
+        if sev_entry.get("type") == "CVSS_V3":
+            score = base_score(sev_entry.get("score", ""))
+            if score is not None:
+                break
 
-    return "UNKNOWN"
+    db_specific = raw.get("database_specific") or {}
+    if label := db_specific.get("severity"):
+        label = str(label).upper()
+        return ("MEDIUM" if label == "MODERATE" else label), score
 
-
-def _cvss_to_label(cvss_vector: str) -> str:
-    """
-    Map a CVSS base score extracted from a vector string to a severity label.
-
-    This is a rough approximation based on the CVSS v3 severity bands.
-    """
-    # CVSS vectors don't contain the base score inline; use the vector prefix
-    # qualifiers as a rough indicator (AV:N + AC:L = higher risk)
-    if "AV:N" in cvss_vector and "PR:N" in cvss_vector:
-        return "HIGH"
-    if "AV:N" in cvss_vector:
-        return "MEDIUM"
-    return "LOW"
+    if score is not None:
+        return rating(score), score
+    return "UNKNOWN", None
 
 
-def _extract_fixed_version(raw: dict, package: str, installed: str) -> str:
-    """
-    Scan the OSV ``affected[].ranges`` for a ``FIXED`` event version.
+def _parse_version(value: str) -> Version | None:
+    try:
+        return Version(value)
+    except (InvalidVersion, TypeError):
+        return None
 
-    Returns the fixed version string or empty string if not found.
-    """
+
+def _normalise(name: str) -> str:
+    return name.lower().replace("_", "-").replace(".", "-")
+
+
+def _range_events(rng: dict) -> list[tuple[Version, str]]:
+    """Parseable (version, kind) events of one range, sorted by version."""
+    events = []
+    for ev in rng.get("events", []):
+        for kind in ("introduced", "fixed", "last_affected"):
+            if kind in ev:
+                ver = Version("0") if ev[kind] == "0" else _parse_version(ev[kind])
+                if ver is not None:
+                    events.append((ver, kind))
+    return sorted(events, key=lambda e: e[0])
+
+
+def _pairs_from_events(events: list[tuple[Version, str]]) -> list[tuple[Version, Version | None]]:
+    """Turn sorted events into (introduced, fixed-or-None) intervals."""
+    pairs: list[tuple[Version, Version | None]] = []
+    start: Version | None = None
+    for ver, kind in events:
+        if kind == "introduced":
+            start = ver if start is None else start
+        elif start is not None:
+            pairs.append((start, ver if kind == "fixed" else None))
+            start = None
+    if start is not None:
+        pairs.append((start, None))
+    return pairs
+
+
+def _ranges_for(raw: dict, package: str) -> list[tuple[Version, Version | None]]:
+    """(introduced, fixed) pairs for ``package`` from ECOSYSTEM ranges."""
+    pairs: list[tuple[Version, Version | None]] = []
     for affected in raw.get("affected", []):
         pkg_info = affected.get("package", {})
         if pkg_info.get("ecosystem", "").lower() != "pypi":
             continue
-        # Walk ranges for a FIXED event
+        if pkg_info.get("name") and _normalise(pkg_info["name"]) != _normalise(package):
+            continue
         for rng in affected.get("ranges", []):
-            for event in rng.get("events", []):
-                if "fixed" in event:
-                    return str(event["fixed"])
-    return ""
+            if rng.get("type") in ("ECOSYSTEM", "SEMVER"):  # GIT ranges use commit hashes
+                pairs.extend(_pairs_from_events(_range_events(rng)))
+    return pairs
+
+
+def _extract_fixed_version(raw: dict, package: str, installed: str) -> str:
+    """
+    Return the first fixed version for the range that contains ``installed``.
+
+    An advisory often lists one fix per release line (for example 4.2.17,
+    5.0.10 and 5.1.4). Returning the first "fixed" event, as earlier
+    versions did, pointed Django 5.1.2 users at 4.2.17. If no range contains
+    the installed version, the lowest fixed version above it is used.
+    Returns "" when no fix is known.
+    """
+    ranges = _ranges_for(raw, package)
+    fixes = [fixed for _, fixed in ranges if fixed is not None]
+    current = _parse_version(installed)
+    if current is None:
+        return str(min(fixes)) if fixes else ""
+    for start, fixed in ranges:
+        if start <= current and (fixed is None or current < fixed):
+            return str(fixed) if fixed is not None else ""
+    later = [f for f in fixes if f > current]
+    return str(min(later)) if later else ""

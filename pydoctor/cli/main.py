@@ -147,9 +147,6 @@ def _run_scan(
     ctx: ProjectContext | None = None,
 ) -> DiagnosisReport:  # noqa: C901
     """Run the Analyzer with Rich progress indicators."""
-    if no_cache:
-        CacheManager().clear()
-
     if not as_json:
         console.print("[section]Scanning project...[/]")
 
@@ -167,7 +164,12 @@ def _run_scan(
 
     if as_json:
         analyzer = Analyzer(
-            project_path=path, scanners=scanners, verbose=verbose, python=python, ctx=ctx
+            project_path=path,
+            scanners=scanners,
+            verbose=verbose,
+            python=python,
+            ctx=ctx,
+            no_cache=no_cache,
         )
         report = analyzer.run(on_progress=None)
         report.command = command
@@ -182,7 +184,12 @@ def _run_scan(
     ) as progress:
         progress.add_task("🩺 PyDoctor scanning project...", total=None)
         analyzer = Analyzer(
-            project_path=path, scanners=scanners, verbose=verbose, python=python, ctx=ctx
+            project_path=path,
+            scanners=scanners,
+            verbose=verbose,
+            python=python,
+            ctx=ctx,
+            no_cache=no_cache,
         )
         report = analyzer.run(on_progress=progress_callback)
         report.command = command

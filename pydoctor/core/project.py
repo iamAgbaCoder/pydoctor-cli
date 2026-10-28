@@ -74,6 +74,7 @@ class ProjectContext:
     env_error: str | None = None
     distributions: dict[str, dict] = field(default_factory=dict)
     marker_env: dict[str, str] = field(default_factory=dict)
+    no_cache: bool = False  # --no-cache: ignore cached advisories (still refresh them)
 
     # ── Factory method ─────────────────────────────────────────
 
