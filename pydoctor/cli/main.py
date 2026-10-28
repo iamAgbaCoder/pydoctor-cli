@@ -85,7 +85,7 @@ _HELP_EPILOG = """
 [section]🏥  COMMUNITY & SUPPORT[/]
 
   [label]Docs:[/][pkg] https://pydoctor-docs.thally.app[/]
-  [label]Version:[/][info] v2.1.0 (Premium Kernel Edition)[/]
+  [label]Version:[/][info] v2.2.0 (Premium Kernel Edition)[/]
 
 [kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
 """
@@ -539,8 +539,16 @@ def _norm(name: str) -> str:
 
 def _installed_version(ctx, pkg: str) -> str | None:
     """Return the version of ``pkg`` installed in the project's environment."""
+    from pydoctor.utils.env_probe import probe_environment
+
+    probe, _ = probe_environment(ctx.project_python)
+    packages = (
+        probe.packages
+        if probe
+        else get_installed_packages(python_executable=ctx.project_python)  # fallback: pip
+    )
     target = _norm(pkg)
-    for name, version in get_installed_packages(python_executable=ctx.project_python).items():
+    for name, version in packages.items():
         if _norm(name) == target:
             return version
     return None

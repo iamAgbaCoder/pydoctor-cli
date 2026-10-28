@@ -33,9 +33,14 @@ def test_probe_reads_the_target_interpreter():
 
 def test_probe_reports_virtualenv_from_the_target_not_from_pydoctor():
     # The test suite runs inside a virtualenv; its base interpreter is not one.
-    base = getattr(sys, "_base_executable", None)
-    if sys.prefix == sys.base_prefix or not base or not Path(base).exists():
-        pytest.skip("needs to run inside a virtualenv")
+    ver = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    candidates = [
+        Path(sys.base_prefix) / "bin" / f"python{ver}",
+        Path(sys.base_prefix) / "python.exe",
+    ]
+    base = next((str(p) for p in candidates if p.exists()), None)
+    if sys.prefix == sys.base_prefix or not base:
+        pytest.skip("needs to run inside a virtualenv with a locatable base interpreter")
     venv_probe, _ = probe_environment(sys.executable)
     base_probe, _ = probe_environment(base)
     assert venv_probe is not None and venv_probe.in_virtualenv is True
