@@ -88,14 +88,16 @@ def is_test_file(path: Path, root: Path) -> bool:
     - Files inside directories named tests, test, or testing
     """
     name = path.name.lower()
-    if name.startswith("test_") or name == "conftest.py":
+    if name.startswith("test_") or name == "conftest.py" or name.endswith("_test.py"):
+        return True
+    if ".test." in name or ".spec." in name:  # JS/TS test files
         return True
 
     try:
         parts = path.relative_to(root).parts
         for part in parts:
             p = part.lower()
-            if p in ("tests", "test", "testing") or p.startswith("test"):
+            if p in ("tests", "test", "testing", "__tests__", "fixtures") or p.startswith("test"):
                 return True
     except ValueError:
         pass

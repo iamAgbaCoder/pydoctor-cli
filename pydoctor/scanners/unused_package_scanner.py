@@ -44,8 +44,9 @@ from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
 from pydoctor.utils.parser_utils import (
     extract_imports_from_project,
-    extract_string_module_refs,
+    extract_string_constants,
     import_name_to_package,
+    module_refs_from_strings,
 )
 
 CATEGORY = "unused"
@@ -58,6 +59,9 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     """
     Detect packages that are declared in requirements but never imported.
     """
+    if ctx.env_error:
+        # Reported once by the analyzer as ENV_PACKAGES_UNAVAILABLE.
+        return []
     precondition_issues = _check_preconditions(ctx)
     if precondition_issues:
         return precondition_issues
@@ -162,10 +166,51 @@ def _get_imported_packages(ctx: ProjectContext) -> set[str]:
         pkgs.update(_norm(d) for d in dist_map.get(n, []))
     # Module paths held in strings only count when they match an installed
     # distribution, so arbitrary strings can't mark random packages as used.
-    for n in extract_string_module_refs(ctx.python_files):
+    strings = extract_string_constants(ctx.python_files)
+    for n in module_refs_from_strings(strings):
         pkgs.update(_norm(d) for d in dist_map.get(n, []))
+    pkgs.update(_packages_behind_backends(strings))
     pkgs.update(_packages_named_in_run_files(ctx))
     return pkgs
+
+
+_POSTGRES = ("psycopg2", "psycopg2-binary", "psycopg", "psycopg-binary")
+_MYSQL = ("mysqlclient", "pymysql")
+
+# Settings whose string never names the package that implements them.
+_BACKEND_PACKAGES: dict[str, tuple[str, ...]] = {
+    "django.db.backends.postgresql": _POSTGRES,
+    "django.db.backends.postgresql_psycopg2": _POSTGRES,
+    "django.contrib.gis.db.backends.postgis": _POSTGRES,
+    "django.db.backends.mysql": _MYSQL,
+    "django.contrib.gis.db.backends.mysql": _MYSQL,
+    "django.db.backends.oracle": ("oracledb", "cx-oracle"),
+    "django.contrib.auth.hashers.Argon2PasswordHasher": ("argon2-cffi",),
+    "django.contrib.auth.hashers.BCryptSHA256PasswordHasher": ("bcrypt",),
+    "django.contrib.auth.hashers.BCryptPasswordHasher": ("bcrypt",),
+    "django.core.cache.backends.redis.RedisCache": ("redis", "hiredis"),
+    "django.core.cache.backends.memcached.PyMemcacheCache": ("pymemcache",),
+    "django.core.cache.backends.memcached.PyLibMCCache": ("pylibmc",),
+}
+_URL_SCHEME_PACKAGES: dict[str, tuple[str, ...]] = {
+    "postgres://": _POSTGRES,
+    "postgresql://": _POSTGRES,
+    "mysql://": _MYSQL,
+    "redis://": ("redis", "hiredis"),
+    "rediss://": ("redis", "hiredis"),
+}
+
+
+def _packages_behind_backends(strings: set[str]) -> set[str]:
+    """Database drivers, hashers and cache clients selected by a settings string."""
+    found: set[str] = set()
+    for value in strings:
+        if value in _BACKEND_PACKAGES:
+            found.update(_BACKEND_PACKAGES[value])
+        for scheme, pkgs in _URL_SCHEME_PACKAGES.items():
+            if value.startswith(scheme):
+                found.update(pkgs)
+    return found
 
 
 _DIST_MAP_SNIPPET = (
@@ -182,12 +227,16 @@ def _distribution_map(ctx: ProjectContext) -> dict[str, list[str]]:
     """
     python = getattr(ctx, "project_python", None) or sys.executable
     try:
-        result = subprocess.run(
-            [python, "-c", _DIST_MAP_SNIPPET],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="pydoctor-") as cwd:
+            result = subprocess.run(
+                [python, "-c", _DIST_MAP_SNIPPET],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=cwd,  # keep project files from shadowing the stdlib
+            )
         if result.returncode == 0:
             data = json.loads(result.stdout)
             if isinstance(data, dict):

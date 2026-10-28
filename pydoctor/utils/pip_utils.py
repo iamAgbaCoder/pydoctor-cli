@@ -43,30 +43,39 @@ def get_installed_packages(python_executable: str | None = None) -> dict[str, st
         return {}
 
 
-def get_outdated_packages(python_executable: str | None = None) -> list[dict]:
+def get_outdated_packages(python_executable: str | None = None) -> list[dict] | None:
     """
-    Return a list of outdated packages as reported by ``pip list --outdated``.
+    Return outdated packages as reported by ``pip list --outdated``.
 
-    Returns
-    -------
-    list[dict]
-        Empty list when pip fails or output cannot be parsed.
+    Returns ``None`` (not an empty list) when pip fails, so callers can tell
+    "nothing is outdated" apart from "couldn't check". Raises
+    ``subprocess.TimeoutExpired`` on timeout.
     """
-    import subprocess
+    result = run_pip_command(
+        ["list", "--outdated", "--format=json"], python_executable=python_executable, timeout=30
+    )
+    return _parse_outdated(result)
 
+
+def get_outdated_packages_uv(uv: str, python_executable: str) -> list[dict] | None:
+    """Same as ``get_outdated_packages`` for environments without pip, using uv."""
+    from pydoctor.utils.subprocess_utils import run_command
+
+    result = run_command(
+        [uv, "pip", "list", "--outdated", "--format", "json", "--python", python_executable],
+        timeout=60,
+    )
+    return _parse_outdated(result)
+
+
+def _parse_outdated(result) -> list[dict] | None:
+    if result.returncode != 0:
+        return None
     try:
-        result = run_pip_command(
-            ["list", "--outdated", "--format=json"], python_executable=python_executable, timeout=30
-        )
-        if result.returncode != 0:
-            return []
-        return json.loads(result.stdout)
+        data = json.loads(result.stdout or "[]")
     except json.JSONDecodeError:
-        return []
-    except subprocess.TimeoutExpired:
-        # We raise TimeoutExpired up so the scanner can report it beautifully as an INFO issue
-        # rather than just displaying "All packages are up to date" (false positive).
-        raise
+        return None
+    return data if isinstance(data, list) else None
 
 
 # ──────────────────────────────────────────────────────────────
@@ -228,22 +237,24 @@ def remove_from_requirements_file(req_path: Path, package: str) -> bool:
 
 def get_dependency_graph(python_executable: str | None = None) -> list[dict]:
     """
-    Return the dependency tree for the current or specified environment.
-    Uses ``pipdeptree --json-tree`` if available, otherwise returns [].
+    Return the dependency tree of the given (or current) environment.
+
+    pipdeptree is a PyDoctor dependency, so it is installed next to PyDoctor,
+    not necessarily in the project. It is run from PyDoctor's interpreter and
+    pointed at the project with ``--python``, which also works for
+    environments without pip (uv). Returns [] if it can't run.
     """
     import subprocess
 
+    cmd = [sys.executable, "-m", "pipdeptree", "--json-tree"]
+    if python_executable and python_executable != sys.executable:
+        cmd[3:3] = ["--python", python_executable]
     try:
-        py = python_executable or sys.executable
-        result = subprocess.run(
-            [py, "-m", "pipdeptree", "--json-tree"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=120)
         if result.returncode == 0:
-            return json.loads(result.stdout)
-    except (subprocess.SubprocessError, json.JSONDecodeError, ImportError):
+            data = json.loads(result.stdout)
+            return data if isinstance(data, list) else []
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError):
         pass
     return []
 

@@ -79,7 +79,7 @@ class CacheManager:
 
         return entry.get("value")
 
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: str, value: Any, save: bool = True) -> None:
         """
         Store a value in the cache with the current timestamp.
 
@@ -87,8 +87,15 @@ class CacheManager:
         ----------
         key:   Cache key.
         value: Any JSON-serialisable value.
+        save:  Write to disk now. Pass False when setting many keys, then call
+               ``save()`` once (writing the whole file per key is quadratic).
         """
         self._data[key] = {"_ts": time.time(), "value": value}
+        if save:
+            self._save()
+
+    def save(self) -> None:
+        """Persist the cache to disk."""
         self._save()
 
     def invalidate(self, key: str) -> None:

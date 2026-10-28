@@ -83,17 +83,30 @@ class TestVirtualEnvCheck:
 
 
 class TestPipVersionCheck:
-    def test_pip_missing(self):
-        with patch("pydoctor.scanners.env_scanner.get_pip_version", return_value=None):
-            issues = env_scanner._check_pip_version()
-        assert any(i.code == "ENV_PIP_MISSING" for i in issues)
+    """pip is checked in the project environment (ctx.pip_version), not PyDoctor's."""
 
-    def test_pip_outdated(self):
-        with patch("pydoctor.scanners.env_scanner.get_pip_version", return_value="20.0.0"):
-            issues = env_scanner._check_pip_version()
-        assert any(i.code == "ENV_PIP_OUTDATED" for i in issues)
+    def test_pip_missing_without_uv(self, tmp_path):
+        ctx = _make_ctx(tmp_path)
+        ctx.pip_version = None
+        with patch("shutil.which", return_value=None):
+            issues = env_scanner._check_pip_version(ctx)
+        assert [i.code for i in issues] == ["ENV_PIP_MISSING"]
+        assert issues[0].severity == Severity.WARNING
 
-    def test_pip_ok(self):
-        with patch("pydoctor.scanners.env_scanner.get_pip_version", return_value="23.1.0"):
-            issues = env_scanner._check_pip_version()
-        assert any(i.code == "ENV_PIP_OK" for i in issues)
+    def test_pip_absent_in_uv_environment_is_info(self, tmp_path):
+        ctx = _make_ctx(tmp_path)
+        ctx.pip_version = None
+        ctx.is_uv = True
+        issues = env_scanner._check_pip_version(ctx)
+        assert [i.code for i in issues] == ["ENV_PIP_ABSENT_UV"]
+        assert issues[0].severity == Severity.INFO
+
+    def test_pip_outdated(self, tmp_path):
+        ctx = _make_ctx(tmp_path)
+        ctx.pip_version = "20.0.0"
+        assert any(i.code == "ENV_PIP_OUTDATED" for i in env_scanner._check_pip_version(ctx))
+
+    def test_pip_ok(self, tmp_path):
+        ctx = _make_ctx(tmp_path)
+        ctx.pip_version = "23.1.0"
+        assert any(i.code == "ENV_PIP_OK" for i in env_scanner._check_pip_version(ctx))

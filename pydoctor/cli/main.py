@@ -84,8 +84,8 @@ _HELP_EPILOG = """
 
 [section]🏥  COMMUNITY & SUPPORT[/]
 
-  [label]Docs:[/][pkg] https://pydoctor.vercel.app/docs[/]
-  [label]Version:[/][info] v2.1.0 (Premium Kernel Edition)[/]
+  [label]Docs:[/][pkg] https://pydoctor-docs.thally.app[/]
+  [label]Version:[/][info] v2.2.0 (Premium Kernel Edition)[/]
 
 [kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
 """
@@ -122,6 +122,12 @@ _PATH_ARG = typer.Option(..., "--path", "-p", help="Project directory to scan.")
 _JSON_ARG = typer.Option(..., "--json", "-j", help="Output results as JSON.")
 _VERBOSE_ARG = typer.Option(..., "--verbose", "-v", help="Show detailed output and timing.")
 _NO_CACHE_ARG = typer.Option(..., "--no-cache", help="Bypass the local vulnerability cache.")
+_PYTHON_ARG = typer.Option(
+    ...,
+    "--python",
+    help="Python interpreter of the project to scan (default: auto-detect). "
+    "Also settable with PYDOCTOR_PYTHON.",
+)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -137,11 +143,10 @@ def _run_scan(
     as_json: bool = False,
     ci_mode: bool = False,
     command: str | None = None,
+    python: str | None = None,
+    ctx: ProjectContext | None = None,
 ) -> DiagnosisReport:  # noqa: C901
     """Run the Analyzer with Rich progress indicators."""
-    if no_cache:
-        CacheManager().clear()
-
     if not as_json:
         console.print("[section]Scanning project...[/]")
 
@@ -158,7 +163,14 @@ def _run_scan(
             console.print(f"[kernel]»[/] Checking {label.lower().replace(' ', ' ')}")
 
     if as_json:
-        analyzer = Analyzer(project_path=path, scanners=scanners, verbose=verbose)
+        analyzer = Analyzer(
+            project_path=path,
+            scanners=scanners,
+            verbose=verbose,
+            python=python,
+            ctx=ctx,
+            no_cache=no_cache,
+        )
         report = analyzer.run(on_progress=None)
         report.command = command
         return report
@@ -175,11 +187,22 @@ def _run_scan(
             project_path=path,
             scanners=scanners,
             verbose=verbose,
+            python=python,
+            ctx=ctx,
+            no_cache=no_cache,
         )
         report = analyzer.run(on_progress=progress_callback)
         report.command = command
 
     return report
+
+
+def _is_interactive() -> bool:
+    """True when a person can answer prompts (not CI, not piped input)."""
+    try:
+        return sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
 
 
 def _output(report: DiagnosisReport, as_json: bool, verbose: bool = False) -> None:
@@ -213,23 +236,37 @@ def _exit_code(report: DiagnosisReport, path: str = ".") -> int:
 @app.command(rich_help_panel="CORE COMMANDS")
 def diagnose(
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
     no_cache: Annotated[bool, _NO_CACHE_ARG] = False,
 ) -> None:  # noqa: C901
     """🩺  Run a **full** diagnosis of your Python project."""
+    ctx = None
     if not json:
-        ctx = ProjectContext.from_path(path)
-        if not ctx.in_virtualenv:
-            console.print("[warning]⚠ No virtual environment detected in this project.[/]")
-            if not Confirm.ask("Do you want to proceed using global system packages?"):
+        ctx = ProjectContext.from_path(path, python=python)
+        if not ctx.env_error and not ctx.in_virtualenv:
+            console.print(
+                "[warning]⚠ No virtual environment detected. Scanning "
+                f"{ctx.python_executable} ({ctx.python_source}).[/]"
+            )
+            # Never block a non-interactive run (CI, pipes) on a prompt.
+            if _is_interactive() and not Confirm.ask(
+                "Do you want to proceed using global system packages?"
+            ):
                 console.print(
                     "\n[info]ℹ Cancelled. Please activate a virtual environment and try again.[/]"
                 )
                 raise typer.Exit()
 
     report = _run_scan(
-        path=path, verbose=verbose, no_cache=no_cache, as_json=json, command="diagnose"
+        path=path,
+        verbose=verbose,
+        no_cache=no_cache,
+        as_json=json,
+        command="diagnose",
+        python=python,
+        ctx=ctx,
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
@@ -238,12 +275,15 @@ def diagnose(
 @app.command(rich_help_panel="CORE COMMANDS")
 def check(
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     ci: bool = typer.Option(False, "--ci", help="Run in CI/CD guard mode."),
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
     """🛡️  Perform security and health checks. Use --ci for pipeline shielding."""
-    report = _run_scan(path=path, ci_mode=ci, verbose=verbose, as_json=json, command="check")
+    report = _run_scan(
+        path=path, ci_mode=ci, verbose=verbose, as_json=json, command="check", python=python
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
 
@@ -253,7 +293,7 @@ def docker(
     image: Annotated[str | None, typer.Argument(help="Docker image to scan (optional).")] = None,
     path: Annotated[str, _PATH_ARG] = ".",
 ) -> None:
-    """🐳  Diagnose Python issues inside **Docker** containers."""
+    """🐳  [Preview] Check that a Dockerfile exists and uses a Python base image."""
     console.print(Panel("[section]🐳 Docker Environment Doctor[/]", border_style="rule"))
     console.print("[kernel]Scanning for Dockerfile and container runtime...[/]")
     dockerfile = Path(path) / "Dockerfile"
@@ -268,17 +308,26 @@ def docker(
             )
         else:
             console.print("[ok]✔[/] Python base image identified.")
-    console.print("\n[info]ℹ This feature is in beta. Full container introspection coming soon.[/]")
+    console.print(
+        "\n[info]ℹ Preview: this only checks the Dockerfile. It doesn't inspect images or "
+        "containers yet.[/]"
+    )
 
 
 @app.command(rich_help_panel="SECURITY & CI/CD")
 def github(
     repo: Annotated[str | None, typer.Argument(help="GitHub repository URL (optional).")] = None,
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
-    """🐙  Integrate with **GitHub** for repository-wide health scans."""
+    """🐙  Run the CI/CD guard on a local git checkout."""
+    if repo:
+        err_console.print(
+            "[warning]⚠ Scanning remote repositories isn't supported yet; "
+            f"ignoring {repo} and scanning {path}.[/]"
+        )
     if not json:
         console.print(Panel("[section]🐙 GitHub Repository Doctor[/]", border_style="rule"))
         if not repo:
@@ -295,7 +344,9 @@ def github(
                 console.print("[ok]✔[/] Local git repository detected.")
         console.print("\n[info]ℹ Running pydoctor on the current branch...[/]")
 
-    report = _run_scan(path=path, ci_mode=True, verbose=verbose, as_json=json, command="github")
+    report = _run_scan(
+        path=path, ci_mode=True, verbose=verbose, as_json=json, command="github", python=python
+    )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
 
@@ -306,12 +357,18 @@ def github(
 @app.command(name="scan-security", rich_help_panel="SECURITY & CI/CD")
 def scan_security(
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
     """🔒 Scan installed packages for known vulnerabilities (OSV)."""
     report = _run_scan(
-        scanners=["security"], path=path, verbose=verbose, as_json=json, command="scan-security"
+        scanners=["security"],
+        path=path,
+        verbose=verbose,
+        as_json=json,
+        command="scan-security",
+        python=python,
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
@@ -325,12 +382,18 @@ def scan_security(
 @app.command(name="scan-unused", rich_help_panel="RESOURCE HYGIENE")
 def scan_unused(
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
     """🧹 Detect unused packages via AST analysis."""
     report = _run_scan(
-        scanners=["unused"], path=path, verbose=verbose, as_json=json, command="scan-unused"
+        scanners=["unused"],
+        path=path,
+        verbose=verbose,
+        as_json=json,
+        command="scan-unused",
+        python=python,
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
@@ -339,12 +402,18 @@ def scan_unused(
 @app.command(name="scan-deps", rich_help_panel="RESOURCE HYGIENE")
 def scan_deps(
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
     """📦 Scan for dependency version conflicts."""
     report = _run_scan(
-        scanners=["dependencies"], path=path, verbose=verbose, as_json=json, command="scan-deps"
+        scanners=["dependencies"],
+        path=path,
+        verbose=verbose,
+        as_json=json,
+        command="scan-deps",
+        python=python,
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
@@ -353,12 +422,18 @@ def scan_deps(
 @app.command(name="check-env", rich_help_panel="RESOURCE HYGIENE")
 def check_env(
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
     """🌍 Verify Python and virtual environment health."""
     report = _run_scan(
-        scanners=["environment"], path=path, verbose=verbose, as_json=json, command="check-env"
+        scanners=["environment"],
+        path=path,
+        verbose=verbose,
+        as_json=json,
+        command="check-env",
+        python=python,
     )
     _output(report, as_json=json, verbose=verbose)
     raise typer.Exit(code=_exit_code(report, path))
@@ -373,6 +448,7 @@ def fix(
         list[str] | None, typer.Argument(help="Specific packages to fix (optional).")
     ] = None,
     path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
     safe: bool = typer.Option(True, "--safe/--no-safe", help="Confirm each action."),
     upgrade: bool = typer.Option(True, "--upgrade/--no-upgrade", help="Upgrade outdated."),
     remove: bool = typer.Option(False, "--remove/--no-remove", help="Remove unused."),
@@ -383,8 +459,8 @@ def fix(
             "[section]🔧 PyDoctor Auto-Fix[/]\n\nScanning for fixable issues …", border_style="rule"
         )
     )
-    report_data = _run_scan(path=path)
-    ctx = ProjectContext.from_path(path)
+    report_data = _run_scan(path=path, python=python)
+    ctx = report_data.ctx  # reuse the scan's context instead of probing again
     if packages:
         _filter_issues_by_targets(report_data, packages)
     actions = 0
@@ -463,8 +539,16 @@ def _norm(name: str) -> str:
 
 def _installed_version(ctx, pkg: str) -> str | None:
     """Return the version of ``pkg`` installed in the project's environment."""
+    from pydoctor.utils.env_probe import probe_environment
+
+    probe, _ = probe_environment(ctx.project_python)
+    packages = (
+        probe.packages
+        if probe
+        else get_installed_packages(python_executable=ctx.project_python)  # fallback: pip
+    )
     target = _norm(pkg)
-    for name, version in get_installed_packages(python_executable=ctx.project_python).items():
+    for name, version in packages.items():
         if _norm(name) == target:
             return version
     return None

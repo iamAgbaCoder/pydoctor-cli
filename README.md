@@ -51,6 +51,16 @@ pipx install pydoctor-cli
 pip install pydoctor-cli
 ```
 
+> Install `pydoctor-cli`, not `pydoctor`: that is an unrelated project (Twisted's API doc generator) that installs a command with the same name.
+
+PyDoctor scans your **project's** Python, wherever PyDoctor itself is installed. It uses the active virtualenv, or a `.venv`/`venv` in the project, and tells you which interpreter it chose. To choose one yourself:
+
+```bash
+pydoctor diagnose --python .venv/bin/python   # or set PYDOCTOR_PYTHON
+```
+
+📖 Full documentation: **https://pydoctor-docs.thally.app**
+
 ---
 
 ## ⚡ Usage
@@ -74,6 +84,19 @@ pydoctor fix
 ---
 
 ## Release History
+
+### v2.2.0
+Results you can trust: every fix in this release removes a case where PyDoctor reported a problem as fine, or got a severity wrong.
+
+- **Scans the right environment:** facts come from your project's interpreter, not PyDoctor's. Under pipx or `uv tool`, and in uv environments (which have no pip), 2.1.0 saw 0 packages and reported everything as OK. Works without pip (package metadata, `uv pip list --outdated`). New `--python` / `PYDOCTOR_PYTHON`; the report shows which interpreter was scanned and why.
+- **Fails loudly:** `ENV_PACKAGES_UNAVAILABLE` (error) when the environment can't be read, `ENV_DEPS_NOT_INSTALLED` when the scanned Python has none of your dependencies, and outdated checks that can't run say so instead of "all up to date".
+- **Virtualenv detection works:** it was always "active". The `diagnose` no-venv prompt now appears, and never blocks CI or piped runs.
+- **Real CVSS scores:** severity is computed from the CVSS v3 vector. Previously a 3.1 (Low) and a 9.8 (Critical) vulnerability were both shown as critical. GitHub's `MODERATE` is now medium.
+- **Right fix version:** for advisories with one fix per release line, `fix` targets your line (Django 5.1.2 → 5.1.4, not 4.2.17).
+- **CI guard finds real leaks:** scans every committed text file, adds Stripe, OpenAI, Anthropic, Slack, Google, private-key, database-URL and `SECRET_KEY` rules, flags committed `.env` files, and checks workflows for `pull_request_target` "pwn requests", script injection and `write-all` permissions. Findings have line numbers; add `# pydoctor: ignore` to silence one. Zero findings on Flask, Django, requests, httpx, FastAPI, DRF and pip.
+- **A score that moves:** a package's advisories count once, categories have diminishing returns, and any critical issue keeps the score below "Good". Expect different (usually higher) scores than 2.1.0.
+- **JSON:** includes `health`; `scan-security --json` reports advisory IDs, aliases, fixed version and CVSS score.
+- Smaller: database drivers, hashers and cache clients picked by Django settings count as used; faster advisory fetching; `--no-cache` no longer wipes the cache; circular import fixed; `github <repo>` and `docker` describe what they actually do.
 
 ### v2.1.0
 - **`pydoctor fix` reports what really happened:** upgrades are verified against the installed version. If a pin in `pyproject.toml` blocks an upgrade, pydoctor says so and shows the constraint instead of printing "fixed".

@@ -94,7 +94,8 @@ def _render_kernel_logs(report: DiagnosisReport) -> None:
     os_name = report.ctx.os_name if report.ctx else "Unknown"
 
     console.print(f"STDOUT: [stdout][SUCCESS][/] Runtime: Python {py_ver} ({os_name})")
-    console.print("STDOUT: [stdout][SUCCESS][/] Entropy Check: PASS")
+    if report.ctx and getattr(report.ctx, "python_executable", None):
+        console.print(f"STDOUT: [stdout][SUCCESS][/] Interpreter: {report.ctx.python_executable}")
     console.print("\n[kernel]Orchestrating Dependency Audit...[/]")
 
 
@@ -108,8 +109,12 @@ def _render_boxed_environment(report: DiagnosisReport) -> None:
     table.add_column("Key", style="label")
     table.add_column("Value")
 
-    # Python Version
+    # Python Version and which interpreter was scanned (and why)
     table.add_row(f"{ICON_OK} Python Version:", f"{'.'.join(map(str, ctx.python_version))}")
+    if getattr(ctx, "python_executable", None):
+        table.add_row(f"{ICON_OK} Interpreter:", f"[dim]{ctx.python_executable}[/]")
+    if getattr(ctx, "python_source", ""):
+        table.add_row("  Found via:", ctx.python_source)
 
     # Venv status
     status = "Active" if ctx.in_virtualenv else "[warning]System (Not Isolated)[/]"

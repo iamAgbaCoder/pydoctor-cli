@@ -50,24 +50,22 @@ def render_json(
     str
         The serialised JSON string.
     """
-    data = report.to_dict()
+    from pydoctor.analysis.health_score import calculate_health
 
-    # Special case: map purely security outputs to simple output
-    categories = {i.category for i in report.issues}
+    health = calculate_health(report)
+    data = report.to_dict()
+    data["health"] = {"score": health.score, "verdict": health.verdict}
+
+    # Security-only scans keep their compact shape, now with advisory IDs.
+    categories = {i.category for i in report.issues if i.code not in _CONTEXT_CODES}
     if categories == {"security"}:
-        vulns = []
-        for issue in report.issues:
-            if issue.severity in ("ok", "info"):
-                continue
-            vulns.append(
-                {
-                    "package": issue.package,
-                    "version": issue.extra.get("version", "unknown"),
-                    "advisory": issue.code,
-                    "severity": issue.severity,
-                }
-            )
-        data = {"scan_type": "security", "vulnerabilities": vulns}
+        data = {
+            "scan_type": "security",
+            "health": data["health"],
+            "vulnerabilities": [
+                _vuln_entry(i) for i in report.issues if i.severity not in ("ok", "info")
+            ],
+        }
 
     json_str = json.dumps(
         data,
@@ -81,6 +79,37 @@ def render_json(
         stream.write("\n")
 
     return json_str
+
+
+_CONTEXT_CODES = {"ENV_PACKAGES_UNAVAILABLE", "ENV_DEPS_NOT_INSTALLED"}
+
+
+def _vuln_entry(issue) -> dict:
+    """
+    One entry of the security-only JSON.
+
+    `advisory` used to hold the issue code ("SEC_VULNERABILITY") for every
+    finding, so the GHSA/CVE id was lost. It is now the advisory id; `code`
+    carries the issue code.
+    """
+    extra = issue.extra or {}
+    return {
+        "package": issue.package,
+        "version": extra.get("version", "unknown"),
+        "advisory": extra.get("vuln_id", issue.code),
+        "aliases": extra.get("aliases", []),
+        "fixed_in": extra.get("fixed_in") or None,
+        "cvss_score": extra.get("cvss_score"),
+        "severity": issue.severity,
+        "summary": issue.description,
+        "code": issue.code,
+        **(
+            {"unchecked_packages": extra["unchecked_packages"]}
+            if "unchecked_packages" in extra
+            else {}
+        ),
+        **({"python": extra["python"]} if "python" in extra else {}),
+    }
 
 
 def report_to_dict(report: DiagnosisReport) -> dict:

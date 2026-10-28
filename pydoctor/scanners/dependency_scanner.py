@@ -10,12 +10,13 @@ Detects:
 
 Algorithm
 ─────────
-1. Run ``pip check`` which reports broken requirements natively.
-2. Parse the output and produce structured Issue objects.
-
-``pip check`` is the authoritative source here — it uses pip's own
-resolver to identify conflicts, which is more reliable than us
-re-implementing constraint satisfaction.
+1. If pip is installed in the project environment, run ``pip check`` there
+   and parse its output.
+2. Otherwise (for example uv-created environments, which have no pip),
+   check every installed distribution's ``Requires-Dist`` metadata against
+   the installed versions, evaluating environment markers with the project
+   interpreter's own marker values. This is the same check ``pip check``
+   performs.
 """
 
 from __future__ import annotations
@@ -63,11 +64,17 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     list[Issue]
     """
     issues: list[Issue] = []
+    if ctx.env_error:
+        # Reported once by the analyzer as ENV_PACKAGES_UNAVAILABLE.
+        return issues
 
-    pip_check_issues = _run_pip_check(python_executable=ctx.project_python)
+    if ctx.pip_version or not ctx.distributions:
+        pip_check_issues = _run_pip_check(python_executable=ctx.project_python)
+    else:
+        pip_check_issues = _check_from_metadata(ctx)
     issues.extend(pip_check_issues)
 
-    # If pip check found nothing, emit an OK
+    # If the check found nothing, emit an OK
     if not pip_check_issues:
         issues.append(
             Issue(
@@ -146,6 +153,44 @@ def _run_pip_check(python_executable: str | None = None) -> list[Issue]:
                 )
             )
 
+    return issues
+
+
+def _check_from_metadata(ctx: ProjectContext) -> list[Issue]:
+    """Equivalent of ``pip check`` using metadata read from the project interpreter."""
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    from pydoctor.utils.env_probe import normalise_name
+
+    installed = {normalise_name(n): d["version"] for n, d in ctx.distributions.items()}
+    marker_env = dict(ctx.marker_env)
+    marker_env["extra"] = ""
+    issues: list[Issue] = []
+
+    for name, dist in sorted(ctx.distributions.items()):
+        for raw in dist.get("requires", []):
+            try:
+                req = Requirement(raw)
+            except InvalidRequirement:
+                continue
+            if req.marker is not None:
+                try:
+                    if not req.marker.evaluate(marker_env):
+                        continue
+                except Exception:
+                    continue
+            dep = normalise_name(req.name)
+            if dep not in installed:
+                issues.append(_make_missing_issue(pkg=name, req=req.name))
+            elif req.specifier and not req.specifier.contains(installed[dep], prereleases=True):
+                issues.append(
+                    _make_conflict_issue(
+                        pkg=name,
+                        ver=dist["version"],
+                        req=f"{req.name}{req.specifier}",
+                        installed=f"{req.name} {installed[dep]}",
+                    )
+                )
     return issues
 
 
