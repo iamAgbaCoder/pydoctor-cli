@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -34,9 +35,12 @@ class ProjectContext:
     python_files:       All .py files found under ``root`` (excluding ignored dirs).
     installed_packages: Mapping of package_name → installed_version.
     declared_deps:      Packages listed in requirements.txt / pyproject.toml.
-    python_executable:  Path to the Python interpreter being used.
+    python_executable:  Path to the project's Python interpreter (the one scanned).
     python_version:     (major, minor, micro) tuple of that interpreter.
-    in_virtualenv:      Whether we're running inside a virtual environment.
+    in_virtualenv:      Whether that interpreter belongs to a virtual environment.
+    python_source:      How the interpreter was chosen (shown to the user).
+    pip_version:        pip version inside the project environment, or None.
+    env_error:          Why the environment could not be read, or None.
     """
 
     root: Path
@@ -65,46 +69,57 @@ class ProjectContext:
     git_repo: str | None = None
     git_branch: str | None = None
     git_origin: str | None = None
+    python_source: str = ""
+    pip_version: str | None = None
+    env_error: str | None = None
+    distributions: dict[str, dict] = field(default_factory=dict)
+    marker_env: dict[str, str] = field(default_factory=dict)
 
     # ── Factory method ─────────────────────────────────────────
 
     @classmethod
-    def from_path(cls, path: str | Path) -> ProjectContext:
-        """Build a ProjectContext by scanning ``path``."""
+    def from_path(cls, path: str | Path, python: str | None = None) -> ProjectContext:
+        """
+        Build a ProjectContext by scanning ``path``.
+
+        ``python`` (or the ``PYDOCTOR_PYTHON`` environment variable) forces the
+        interpreter to scan. Otherwise it is discovered; see
+        ``_find_project_python``. Every fact about the environment comes from
+        that interpreter, never from the one PyDoctor itself is running on.
+        """
+        import platform
+
+        from pydoctor.utils.env_probe import probe_environment
+        from pydoctor.utils.pip_utils import get_dependency_graph
+
         root = Path(path).resolve()
         python_files = collect_python_files(root)
 
         declared = cls._parse_dependencies(root)
         meta = cls._extract_pyproject_metadata(root)
 
-        # Detect virtual environment and project python
-        import os
-        import platform
-
-        project_py = cls._find_project_python(root, meta)
-        from pydoctor.utils.pip_utils import get_dependency_graph, get_installed_packages
-
-        installed = get_installed_packages(python_executable=project_py)
-        in_venv = (project_py != sys.base_prefix) or bool(os.environ.get("VIRTUAL_ENV"))
-        graph = get_dependency_graph(python_executable=project_py)
+        project_py, source = cls._find_project_python(
+            root, meta, python or os.environ.get("PYDOCTOR_PYTHON")
+        )
+        probe, env_error = probe_environment(project_py)
 
         venv_path = None
         venv_name = None
-        if in_venv:
-            # project_py is something like <path>/bin/python or <path>/Scripts/python.exe
-            v_path = Path(project_py).parents[1]
-            venv_path = str(v_path)
-            venv_name = v_path.name
+        if probe and probe.in_virtualenv:
+            venv_path = probe.prefix
+            venv_name = Path(probe.prefix).name
 
         git_info = cls._get_git_info(root)
 
         return cls(
             root=root,
             python_files=python_files,
-            installed_packages=installed,
+            installed_packages=probe.packages if probe else {},
             declared_deps=declared,
-            in_virtualenv=in_venv,
-            dependency_graph=graph,
+            python_executable=probe.executable if probe else project_py,
+            python_version=probe.version if probe else (0, 0, 0),
+            in_virtualenv=probe.in_virtualenv if probe else False,
+            dependency_graph=get_dependency_graph(python_executable=project_py) if probe else [],
             platform_info=platform.platform(),
             os_name=platform.system(),
             config=meta.get("config", {}),
@@ -117,77 +132,88 @@ class ProjectContext:
             git_repo=git_info.get("repo"),
             git_branch=git_info.get("branch"),
             git_origin=git_info.get("origin"),
+            python_source=source,
+            pip_version=probe.pip_version if probe else None,
+            env_error=env_error,
+            distributions=probe.distributions if probe else {},
+            marker_env=probe.markers if probe else {},
         )
 
     @classmethod
-    def _find_project_python(cls, root: Path, meta: dict) -> str:
-        """Find the Python interpreter for the project."""
-        # 1. Check for common venv names
-        venv_py = cls._find_venv_python(root)
-        if venv_py:
-            return venv_py
+    def _find_project_python(
+        cls, root: Path, meta: dict, explicit: str | None = None
+    ) -> tuple[str, str]:
+        """
+        Choose the interpreter to scan and say why.
 
-        # 2. Check package managers
+        Order: explicit ``--python`` / ``PYDOCTOR_PYTHON``, the active
+        virtualenv, a virtualenv in the project (or its parent), Poetry/PDM,
+        then ``python3`` on PATH. PyDoctor's own interpreter is the last
+        resort, because under pipx or ``uv tool`` it only contains PyDoctor's
+        dependencies.
+        """
+        if explicit:
+            resolved = shutil.which(explicit) or explicit
+            return resolved, "--python option"
+
+        venv = cls._find_venv_python(root)
+        if venv:
+            return venv
+
         mgr_py = cls._find_manager_python(root, meta)
         if mgr_py:
-            return mgr_py
+            return mgr_py, "Poetry environment" if meta.get("is_poetry") else "PDM environment"
 
-        # 3. Fallback to current interpreter
-        return sys.executable
+        for name in ("python3", "python"):
+            found = shutil.which(name)
+            if found:
+                return found, f"`{name}` on PATH (no project virtualenv found)"
+
+        return sys.executable, "PyDoctor's own interpreter (no other Python found)"
 
     @staticmethod
-    def _find_venv_python(root: Path) -> str | None:  # noqa: C901
-        """Search for virtualenv locations including non-conventional names."""
-        # 1. Check if an environment is already active
+    def _venv_python(base: Path) -> Path:
+        return base / "Scripts" / "python.exe" if os.name == "nt" else base / "bin" / "python"
+
+    @classmethod
+    def _find_venv_python(cls, root: Path) -> tuple[str, str] | None:
+        """Find a virtualenv for the project and describe where it came from."""
         active_venv = os.environ.get("VIRTUAL_ENV")
         if active_venv:
-            base = Path(active_venv)
-            py = base / "Scripts" / "python.exe" if os.name == "nt" else base / "bin" / "python"
+            py = cls._venv_python(Path(active_venv))
             if py.exists():
-                return str(py)
+                return str(py), f"active virtualenv ({active_venv})"
 
-        # 2. Check current directory and its parent for common name matches
-        search_dirs = [root, root.parent]
-        venv_names = [
-            ".venv",
-            "venv",
-            ".env",
-            "env",
-            "dev",
-            ".dev",
-            "test",
-            ".test",
-            "prod",
-            ".prod",
-            "kernel",
-        ]
+        venv_names = [".venv", "venv", "env", ".env"]
+        for venv_dir in venv_names:
+            py = cls._venv_python(root / venv_dir)
+            if py.exists():
+                return str(py), f"{venv_dir}/ in the project"
 
-        for search_dir in search_dirs:
-            for venv_dir in venv_names:
-                if os.name == "nt":
-                    py_path = search_dir / venv_dir / "Scripts" / "python.exe"
-                else:
-                    py_path = search_dir / venv_dir / "bin" / "python"
+        found = cls._find_pyvenv_cfg_dir(root)
+        if found:
+            return found
 
-                if py_path.exists():
-                    return str(py_path)
+        # Monorepos often keep one .venv at the repository root. Only the
+        # conventional names are considered, and the source says so.
+        for venv_dir in (".venv", "venv"):
+            py = cls._venv_python(root.parent / venv_dir)
+            if py.exists():
+                return str(py), f"{venv_dir}/ in the parent directory ({root.parent})"
 
-        # 3. Dynamic scan for pyvenv.cfg in subdirectories (shallow scan of current root)
+        return None
+
+    @classmethod
+    def _find_pyvenv_cfg_dir(cls, root: Path) -> tuple[str, str] | None:
+        """Any directory in the project root that contains pyvenv.cfg."""
         try:
-            for entry in root.iterdir():
-                if entry.is_dir() and not entry.name.startswith("."):
-                    # Check for pyvenv.cfg which is a strong indicator
-                    if (entry / "pyvenv.cfg").exists():
-                        py = (
-                            entry / "Scripts" / "python.exe"
-                            if os.name == "nt"
-                            else entry / "bin" / "python"
-                        )
-                        if py.exists():
-                            return str(py)
-        except PermissionError:
+            for entry in sorted(root.iterdir()):
+                if entry.is_dir() and (entry / "pyvenv.cfg").exists():
+                    py = cls._venv_python(entry)
+                    if py.exists():
+                        return str(py), f"{entry.name}/ in the project"
+        except OSError:
             pass
-
         return None
 
     @staticmethod

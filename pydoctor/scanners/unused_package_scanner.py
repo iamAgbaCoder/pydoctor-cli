@@ -58,6 +58,9 @@ def scan(ctx: ProjectContext) -> list[Issue]:
     """
     Detect packages that are declared in requirements but never imported.
     """
+    if ctx.env_error:
+        # Reported once by the analyzer as ENV_PACKAGES_UNAVAILABLE.
+        return []
     precondition_issues = _check_preconditions(ctx)
     if precondition_issues:
         return precondition_issues

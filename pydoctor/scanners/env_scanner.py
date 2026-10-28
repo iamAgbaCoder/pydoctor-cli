@@ -22,7 +22,6 @@ from pydoctor.config.settings import (
 )
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
-from pydoctor.utils.pip_utils import get_pip_version
 
 # ── Category label ─────────────────────────────────────────────
 CATEGORY = "environment"
@@ -44,7 +43,7 @@ def scan(ctx: ProjectContext) -> list[Issue]:
 
     issues.extend(_check_python_version(ctx))
     issues.extend(_check_virtual_environment(ctx))
-    issues.extend(_check_pip_version())
+    issues.extend(_check_pip_version(ctx))
     issues.extend(_check_platform(ctx))
 
     return issues
@@ -148,22 +147,40 @@ def _check_virtual_environment(ctx: ProjectContext) -> list[Issue]:
         ]
 
 
-def _check_pip_version() -> list[Issue]:
-    """Check that pip is installed and not critically outdated."""
-    pip_ver = get_pip_version()
+def _check_pip_version(ctx: ProjectContext) -> list[Issue]:
+    """Check pip inside the project environment (not PyDoctor's own)."""
+    if ctx.env_error:
+        return []
+    pip_ver = ctx.pip_version
 
     if pip_ver is None:
+        import shutil
+
+        if ctx.is_uv or shutil.which("uv"):
+            return [
+                Issue(
+                    category=CATEGORY,
+                    code="ENV_PIP_ABSENT_UV",
+                    severity=Severity.INFO,
+                    title="pip isn't installed (uv-managed environment)",
+                    description=(
+                        "Environments created by uv don't include pip. PyDoctor reads "
+                        "package metadata directly and uses uv where a tool is needed."
+                    ),
+                    recommendation="",
+                )
+            ]
         return [
             Issue(
                 category=CATEGORY,
                 code="ENV_PIP_MISSING",
-                severity=Severity.ERROR,
-                title="pip is not available",
-                description="pip could not be found or invoked.",
-                recommendation=(
-                    "Reinstall pip: python -m ensurepip --upgrade "
-                    "or python -m pip install --upgrade pip"
+                severity=Severity.WARNING,
+                title="pip isn't installed in the project environment",
+                description=(
+                    f"{ctx.python_executable} has no pip, and uv isn't on PATH. PyDoctor "
+                    "can still scan, but can't check for outdated packages or apply fixes."
                 ),
+                recommendation=f"{ctx.python_executable} -m ensurepip --upgrade",
             )
         ]
 
@@ -203,6 +220,7 @@ def _check_platform(ctx: ProjectContext) -> list[Issue]:
     arch = platform.machine()  # e.g. "AMD64", "x86_64"
     release = platform.release()
     python_path = ctx.python_executable
+    source = f" ({ctx.python_source})" if ctx.python_source else ""
 
     return [
         Issue(
@@ -210,7 +228,7 @@ def _check_platform(ctx: ProjectContext) -> list[Issue]:
             code="ENV_PLATFORM_INFO",
             severity=Severity.INFO,
             title=f"Platform: {os_name} {release} ({arch})",
-            description=(f"OS: {os_name} {release}\n" f"Arch: {arch}\n" f"Python: {python_path}"),
+            description=f"OS: {os_name} {release}\nArch: {arch}\nPython: {python_path}{source}",
             recommendation="",
         )
     ]

@@ -48,6 +48,64 @@ SCANNER_REGISTRY: dict[str, Callable[[ProjectContext], list[Issue]]] = {
 }
 
 
+# Scanners that read the installed environment (everything except "ci").
+_ENV_SCANNERS = {"environment", "dependencies", "outdated", "security", "unused"}
+
+
+def context_issues(ctx: ProjectContext, scanner_keys: list[str]) -> list[Issue]:
+    """
+    Problems with the scan itself, reported once regardless of which scanners run.
+
+    These exist so that a scan which couldn't see the project's packages fails
+    loudly instead of returning a clean bill of health.
+    """
+    if not _ENV_SCANNERS.intersection(scanner_keys):
+        return []
+    if ctx.env_error:
+        return [
+            Issue(
+                category="environment",
+                code="ENV_PACKAGES_UNAVAILABLE",
+                severity=Severity.ERROR,
+                title="Couldn't read the project's installed packages",
+                description=(
+                    f"PyDoctor tried {ctx.project_python} ({ctx.python_source}) and got: "
+                    f"{ctx.env_error}. Security, dependency, outdated and unused checks "
+                    "were not run."
+                ),
+                recommendation=(
+                    "Activate the project's virtualenv, or point PyDoctor at its interpreter "
+                    "with --python path/to/python (or PYDOCTOR_PYTHON)."
+                ),
+                extra={"python": ctx.project_python, "source": ctx.python_source},
+            )
+        ]
+    if ctx.declared_deps:
+        from pydoctor.utils.env_probe import normalise_name
+
+        missing = [d for d in ctx.declared_deps if normalise_name(d) not in ctx.installed_packages]
+        if len(missing) == len(ctx.declared_deps):
+            return [
+                Issue(
+                    category="environment",
+                    code="ENV_DEPS_NOT_INSTALLED",
+                    severity=Severity.WARNING,
+                    title="None of the project's dependencies are installed in the scanned Python",
+                    description=(
+                        f"Scanned {ctx.python_executable} ({ctx.python_source}), which has none "
+                        f"of the {len(ctx.declared_deps)} declared dependencies installed. "
+                        "Results describe that interpreter, not your project."
+                    ),
+                    recommendation=(
+                        "Install the dependencies, activate the project's virtualenv, or use "
+                        "--python path/to/python."
+                    ),
+                    extra={"python": ctx.project_python, "missing": sorted(missing)},
+                )
+            ]
+    return []
+
+
 # ──────────────────────────────────────────────────────────────
 # Analyzer
 # ──────────────────────────────────────────────────────────────
@@ -70,10 +128,14 @@ class Analyzer:
         project_path: str = ".",
         scanners: list[str] | None = None,
         verbose: bool = False,
+        python: str | None = None,
+        ctx: ProjectContext | None = None,
     ) -> None:
         self._project_path = project_path
         self._scanner_keys = scanners or list(SCANNER_REGISTRY.keys())
         self._verbose = verbose
+        self._python = python
+        self._ctx = ctx
 
     # ── Public API ─────────────────────────────────────────────
 
@@ -92,9 +154,10 @@ class Analyzer:
         wall_start = time.perf_counter()
 
         # Build project context once — shared across all scanners
-        ctx = ProjectContext.from_path(self._project_path)
+        ctx = self._ctx or ProjectContext.from_path(self._project_path, python=self._python)
         report = DiagnosisReport(scan_path=str(ctx.root), ctx=ctx)
         scanner_timings: dict[str, float] = {}
+        report.extend(context_issues(ctx, self._scanner_keys))
 
         # Parallel execution for independence (each scanner gets its own thread)
         with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(self._scanner_keys))) as pool:

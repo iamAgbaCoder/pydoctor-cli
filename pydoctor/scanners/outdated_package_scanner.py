@@ -17,29 +17,53 @@ from packaging.version import InvalidVersion, Version
 from pydoctor.config.settings import Severity
 from pydoctor.core.project import ProjectContext
 from pydoctor.core.report import Issue
-from pydoctor.utils.pip_utils import get_outdated_packages
+from pydoctor.utils.pip_utils import get_outdated_packages, get_outdated_packages_uv
 
 CATEGORY = "outdated"
 
 
+def _unavailable(reason: str) -> Issue:
+    return Issue(
+        category=CATEGORY,
+        code="PKG_OUTDATED_UNAVAILABLE",
+        severity=Severity.INFO,
+        title="Outdated-package check skipped",
+        description=f"PyDoctor couldn't list outdated packages: {reason}",
+        recommendation=(
+            "Install pip in the project environment, or install uv, then run the scan again."
+        ),
+    )
+
+
 def scan(ctx: ProjectContext) -> list[Issue]:
     """
-    Detect outdated packages in the active environment.
+    Detect outdated packages in the project environment.
 
-    Parameters
-    ----------
-    ctx: Project context (not directly used but kept for API consistency).
-
-    Returns
-    -------
-    list[Issue]
+    Uses ``pip list --outdated`` when pip is installed in the project, and
+    ``uv pip list --outdated`` otherwise. If neither can run, the check is
+    reported as skipped, never as "all up to date".
     """
-    issues: list[Issue] = []
-
+    import shutil
     import subprocess
 
+    issues: list[Issue] = []
+    if ctx.env_error:
+        return issues
+
+    uv = shutil.which("uv")
     try:
-        outdated = get_outdated_packages(python_executable=ctx.project_python)
+        # ctx.distributions is empty only for contexts built without a probe
+        # (for example in tests); keep pip as the default there.
+        if ctx.pip_version or not ctx.distributions:
+            outdated = get_outdated_packages(python_executable=ctx.project_python)
+        elif uv:
+            outdated = get_outdated_packages_uv(uv, ctx.project_python)
+        else:
+            return [
+                _unavailable(
+                    "pip isn't installed in the project environment, and uv isn't on PATH."
+                )
+            ]
     except subprocess.TimeoutExpired:
         issues.append(
             Issue(
@@ -52,9 +76,11 @@ def scan(ctx: ProjectContext) -> list[Issue]:
             )
         )
         return issues
+    except Exception as exc:
+        return [_unavailable(str(exc) or exc.__class__.__name__)]
 
-    except Exception:
-        outdated = []
+    if outdated is None:
+        return [_unavailable("the package index couldn't be queried.")]
 
     if not outdated:
         issues.append(
