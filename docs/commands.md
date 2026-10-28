@@ -1,6 +1,6 @@
 # 📟 PyDoctor Command Reference
 
-PyDoctor provides a suite of commands designed to be used both by humans and CI systems.
+PyDoctor provides a suite of commands designed to be used both by humans and CI systems. All scan commands accept `--python` to target a specific project interpreter (or set `PYDOCTOR_PYTHON`).
 
 ## 🩺 Core Diagnosis
 
