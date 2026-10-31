@@ -85,7 +85,7 @@ _HELP_EPILOG = """
 [section]🏥  COMMUNITY & SUPPORT[/]
 
   [label]Docs:[/][pkg] https://pydoctor-docs.thally.app[/]
-  [label]Version:[/][info] v2.2.0 (Premium Kernel Edition)[/]
+  [label]Version:[/][info] v2.3.0 (Premium Kernel Edition)[/]
 
 [kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
 """

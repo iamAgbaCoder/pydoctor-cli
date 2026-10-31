@@ -3,7 +3,9 @@ name: PyDoctor CLI - CI/CD
 on:
   push:
     branches: [main, release]
-    tags: ["v*"]
+    # Release tags only (v2.3.0). The moving major tag (v2) used by the
+    # GitHub Action must not trigger a PyPI release.
+    tags: ["v*.*.*"]
   pull_request:
     branches: [main, release]
 
@@ -84,7 +86,7 @@ jobs:
     name: Deploy to Production PyPI
     needs: test
     # Run only on pushes to release branch or new semantic tags
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.'))
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -106,7 +108,7 @@ jobs:
   github-release:
     name: GitHub Release
     needs: [deploy-pypi]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '.')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name        = "pydoctor-cli"
-version     = "2.2.0"
+version     = "2.3.0"
 description = "Premium Python environment diagnostic CLI — your project's personal physician."
 readme      = "README.md"
 license     = { file = "LICENSE" }
