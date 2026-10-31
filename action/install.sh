@@ -25,6 +25,10 @@ if [[ -n "${PYDOCTOR_DRY_RUN:-}" ]]; then
 fi
 
 base="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/pydoctor-venv"
+# On Windows runners RUNNER_TEMP is a Windows path; use the POSIX form in bash.
+if command -v cygpath >/dev/null 2>&1; then
+  base="$(cygpath -u "$base")"
+fi
 py="$(command -v python3 || command -v python)"
 "$py" -m venv "$base"
 if [[ -x "$base/bin/python" ]]; then

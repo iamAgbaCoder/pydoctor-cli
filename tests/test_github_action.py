@@ -9,12 +9,19 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+# These scripts run under GitHub Actions' own bash (Git Bash on Windows
+# runners). On a Windows test runner, `bash` on PATH is often WSL, which can't
+# read Windows paths, so the scripts are tested on Linux and macOS only.
+pytestmark = pytest.mark.skipif(
+    shutil.which("bash") is None or sys.platform == "win32",
+    reason="needs a POSIX bash (the action itself runs under Git Bash on Windows)",
+)
 
 
 def _install_spec(**env) -> str:
