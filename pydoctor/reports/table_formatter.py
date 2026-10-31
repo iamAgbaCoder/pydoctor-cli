@@ -17,6 +17,7 @@ from rich.text import Text
 from pydoctor.analysis.health_score import calculate_health
 from pydoctor.config.settings import Severity
 from pydoctor.core.report import DiagnosisReport, Issue
+from pydoctor.reports.docs_links import docs_url
 from pydoctor.reports.terminal_colors import (
     ICON_OK,
     ICON_WARNING,
@@ -71,6 +72,7 @@ def render_report(report: DiagnosisReport, verbose: bool = False) -> None:
     console.print()
 
     _render_verdict(report)
+    _render_baseline_note(report)
     console.print()
 
     _render_recommendations(report, verbose=verbose)
@@ -175,6 +177,9 @@ def _render_boxed_category(cat_key: str, issues: list[Issue]) -> None:
             if i.recommendation:
                 content.append("      Suggestion: ", style="dim_text")
                 content.append(f"{i.recommendation}\n", style="code")
+            if i.severity in (Severity.ERROR, Severity.CRITICAL):
+                content.append("      Docs: ", style="dim_text")
+                content.append(f"{docs_url(i)}\n", style="dim_text")
             content.append("\n")
 
     panel = Panel(
@@ -213,6 +218,22 @@ def _render_health_score(report: DiagnosisReport) -> None:
 
     color = "ok" if health.score >= 80 else "warning" if health.score >= 50 else "error"
     console.print(f"[{color}]{bar}[/] [label]{health.score} / 100[/]")
+
+
+def _render_baseline_note(report: DiagnosisReport) -> None:
+    info = report.scanner_meta.get("baseline")
+    if not info:
+        return
+    if info.get("suppressed"):
+        console.print(
+            f"[dim_text]📌 {info['suppressed']} known issue(s) hidden by the baseline "
+            f"({info['file']}). Use --no-baseline to show them.[/]"
+        )
+    if info.get("stale"):
+        console.print(
+            f"[ok]✔ {info['stale']} baselined issue(s) are fixed. "
+            "Run `pydoctor baseline` to update the file.[/]"
+        )
 
 
 def _render_verdict(report: DiagnosisReport) -> None:

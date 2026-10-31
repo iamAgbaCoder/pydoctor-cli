@@ -103,6 +103,7 @@ def _vuln_entry(issue) -> dict:
         "severity": issue.severity,
         "summary": issue.description,
         "code": issue.code,
+        "docs_url": issue.docs_url,
         **(
             {"unchecked_packages": extra["unchecked_packages"]}
             if "unchecked_packages" in extra

@@ -60,7 +60,14 @@ class Issue:
             "recommendation": self.recommendation,
             "package": self.package,
             "extra": self.extra,
+            "docs_url": self.docs_url,
         }
+
+    @property
+    def docs_url(self) -> str:
+        from pydoctor.reports.docs_links import docs_url
+
+        return docs_url(self)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -89,6 +96,7 @@ class DiagnosisReport:
     scanner_meta: dict = field(default_factory=dict)
     ctx: Any = None
     command: str | None = None
+    scanners: list[str] = field(default_factory=list)  # scanner keys that ran
 
     # ── Convenience helpers ────────────────────────────────────
 

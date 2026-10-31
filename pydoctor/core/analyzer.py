@@ -159,6 +159,7 @@ class Analyzer:
         ctx = self._ctx or ProjectContext.from_path(self._project_path, python=self._python)
         ctx.no_cache = self._no_cache
         report = DiagnosisReport(scan_path=str(ctx.root), ctx=ctx)
+        report.scanners = [k for k in self._scanner_keys if k in SCANNER_REGISTRY]
         scanner_timings: dict[str, float] = {}
         report.extend(context_issues(ctx, self._scanner_keys))
 
