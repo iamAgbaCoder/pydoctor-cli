@@ -19,8 +19,8 @@ pydoctor/
 ├── reports/      # Logic for transforming data into beauty
 │   ├── table_formatter.py # Rich terminal UI
 │   └── json_formatter.py  # Structured exports
-├── security/     # Network clients and batch processing for OSV.dev
-└── utils/        # Shared low-level helpers (pip, subprocess, AST)
+├── security/     # OSV.dev integration, CVSS v3 scoring, and secret detection
+└── utils/        # Interpreter probing and shared helpers (pip, subprocess, AST)
 ```
 
 ## 🔄 The Scanning Lifecycle
@@ -33,6 +33,6 @@ pydoctor/
 
 ## 🛠️ Design Patterns
 
-- **Snapshotting:** We collect all expensive information (like `pip list`) exactly once in the `ProjectContext`.
+- **Snapshotting:** We collect all expensive information (via a one-shot probe of the project interpreter) exactly once in the `ProjectContext`.
 - **Stateless Scanners:** Scanners are pure functions or classes that take a context and return data. They don't modify the environment.
 - **Fail-Safe Networking:** The OSV client uses local caching and retry logic to remain functional even when offline or during API hiccups.
