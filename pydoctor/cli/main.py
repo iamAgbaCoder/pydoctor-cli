@@ -85,7 +85,7 @@ _HELP_EPILOG = """
 [section]🏥  COMMUNITY & SUPPORT[/]
 
   [label]Docs:[/][pkg] https://pydoctor-docs.thally.app[/]
-  [label]Version:[/][info] v2.2.0 (Premium Kernel Edition)[/]
+  [label]Version:[/][info] v2.3.0 (Premium Kernel Edition)[/]
 
 [kernel]Healthy code leads to healthy deployments. Keep your environment sterile.[/]
 """
@@ -122,6 +122,19 @@ _PATH_ARG = typer.Option(..., "--path", "-p", help="Project directory to scan.")
 _JSON_ARG = typer.Option(..., "--json", "-j", help="Output results as JSON.")
 _VERBOSE_ARG = typer.Option(..., "--verbose", "-v", help="Show detailed output and timing.")
 _NO_CACHE_ARG = typer.Option(..., "--no-cache", help="Bypass the local vulnerability cache.")
+_SARIF_ARG = typer.Option(
+    ...,
+    "--sarif",
+    help="Also write findings to this file in SARIF format (for GitHub code scanning).",
+)
+_BASELINE_ARG = typer.Option(
+    ...,
+    "--baseline",
+    help="Baseline file of accepted issues (default: .pydoctor-baseline.json if present).",
+)
+_NO_BASELINE_ARG = typer.Option(
+    ..., "--no-baseline", help="Report every issue, ignoring the baseline."
+)
 _PYTHON_ARG = typer.Option(
     ...,
     "--python",
@@ -212,6 +225,42 @@ def _output(report: DiagnosisReport, as_json: bool, verbose: bool = False) -> No
         render_report(report, verbose=verbose)
 
 
+def _finish(
+    report: DiagnosisReport,
+    path: str,
+    as_json: bool,
+    verbose: bool,
+    sarif: Path | None,
+    baseline: Path | None,
+    no_baseline: bool,
+) -> None:
+    """Apply the baseline, print the report, write SARIF, and exit with the right code."""
+    from pydoctor.core.baseline import BaselineError, apply_baseline, default_path
+
+    if not no_baseline:
+        path_to_use = baseline or default_path(report)
+        if baseline is not None and not path_to_use.is_file():
+            err_console.print(f"[error]✖ Baseline file not found: {path_to_use}[/]")
+            raise typer.Exit(code=2)
+        if path_to_use.is_file():
+            try:
+                apply_baseline(report, path_to_use, set(report.scanners))
+            except BaselineError as exc:
+                err_console.print(f"[error]✖ {exc}[/]")
+                raise typer.Exit(code=2) from exc
+
+    _output(report, as_json=as_json, verbose=verbose)
+
+    if sarif is not None:
+        from pydoctor.reports.sarif_formatter import write_sarif
+
+        write_sarif(report, sarif)
+        if not as_json:
+            console.print(f"[dim_text]SARIF report written to {sarif}[/]")
+
+    raise typer.Exit(code=_exit_code(report, path))
+
+
 def _exit_code(report: DiagnosisReport, path: str = ".") -> int:
     """
     Return a non-zero exit code if:
@@ -237,6 +286,9 @@ def _exit_code(report: DiagnosisReport, path: str = ".") -> int:
 def diagnose(
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
     no_cache: Annotated[bool, _NO_CACHE_ARG] = False,
@@ -268,14 +320,16 @@ def diagnose(
         python=python,
         ctx=ctx,
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 @app.command(rich_help_panel="CORE COMMANDS")
 def check(
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     ci: bool = typer.Option(False, "--ci", help="Run in CI/CD guard mode."),
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
@@ -284,8 +338,7 @@ def check(
     report = _run_scan(
         path=path, ci_mode=ci, verbose=verbose, as_json=json, command="check", python=python
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 @app.command(rich_help_panel="SECURITY & CI/CD")
@@ -319,6 +372,9 @@ def github(
     repo: Annotated[str | None, typer.Argument(help="GitHub repository URL (optional).")] = None,
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
@@ -347,8 +403,7 @@ def github(
     report = _run_scan(
         path=path, ci_mode=True, verbose=verbose, as_json=json, command="github", python=python
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 # --- Individual Targeted Scans ---
@@ -358,6 +413,9 @@ def github(
 def scan_security(
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
@@ -370,8 +428,7 @@ def scan_security(
         command="scan-security",
         python=python,
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -383,6 +440,9 @@ def scan_security(
 def scan_unused(
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
@@ -395,14 +455,16 @@ def scan_unused(
         command="scan-unused",
         python=python,
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 @app.command(name="scan-deps", rich_help_panel="RESOURCE HYGIENE")
 def scan_deps(
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
@@ -415,14 +477,16 @@ def scan_deps(
         command="scan-deps",
         python=python,
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 @app.command(name="check-env", rich_help_panel="RESOURCE HYGIENE")
 def check_env(
     path: Annotated[str, _PATH_ARG] = ".",
     python: Annotated[str | None, _PYTHON_ARG] = None,
+    sarif: Annotated[Path | None, _SARIF_ARG] = None,
+    baseline: Annotated[Path | None, _BASELINE_ARG] = None,
+    no_baseline: Annotated[bool, _NO_BASELINE_ARG] = False,
     json: Annotated[bool, _JSON_ARG] = False,
     verbose: Annotated[bool, _VERBOSE_ARG] = False,
 ) -> None:
@@ -435,11 +499,54 @@ def check_env(
         command="check-env",
         python=python,
     )
-    _output(report, as_json=json, verbose=verbose)
-    raise typer.Exit(code=_exit_code(report, path))
+    _finish(report, path, json, verbose, sarif, baseline, no_baseline)
 
 
 # --- Re-adding fix and other commands ---
+
+
+@app.command(rich_help_panel="CORE COMMANDS")
+def baseline(
+    path: Annotated[str, _PATH_ARG] = ".",
+    python: Annotated[str | None, _PYTHON_ARG] = None,
+    ci: bool = typer.Option(
+        False, "--ci", help="Only record CI/CD guard findings (keeps the rest of the file)."
+    ),
+    output: Annotated[
+        Path | None,
+        typer.Option(
+            "--output", "-o", help="Where to write it (default: .pydoctor-baseline.json)."
+        ),
+    ] = None,
+) -> None:
+    """📌  Accept today's issues so CI only fails on new ones."""
+    from pydoctor.core.baseline import NEVER_BASELINE, default_path, write_baseline
+
+    report = _run_scan(
+        scanners=["ci"] if ci else None, path=path, python=python, command="baseline"
+    )
+    target = output or default_path(report)
+    count = write_baseline(report, target, __version__, set(report.scanners) if ci else None)
+    console.print(
+        Panel(
+            f"[ok]✔ {count} issue{'s' if count != 1 else ''} recorded in {target}[/]\n\n"
+            "Commit this file. Scans now hide these issues and fail only on new ones.\n"
+            "Run `pydoctor baseline` again after fixing issues to shrink it, or scan with "
+            "--no-baseline to see everything.",
+            border_style="ok",
+        )
+    )
+
+    incomplete = [i for i in report.issues if i.code in NEVER_BASELINE]
+    if incomplete:
+        for issue in incomplete:
+            err_console.print(f"[error]✖ {issue.title}[/]\n  {issue.description}")
+        err_console.print(
+            "\n[warning]⚠ Part of the scan didn't run, so its issues aren't in the baseline. "
+            "They will be reported as new once the scan can run. Fix the problems above and "
+            "run `pydoctor baseline` again.[/]"
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command(rich_help_panel="CORE COMMANDS")

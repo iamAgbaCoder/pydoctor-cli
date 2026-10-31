@@ -73,6 +73,44 @@ Run a comprehensive check-up on your project.
 pydoctor diagnose
 ```
 
+### In CI: GitHub Action
+
+Findings appear as code-scanning alerts on pull requests, and the job fails on new problems:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+
+steps:
+  - uses: actions/checkout@v4
+  - uses: actions/setup-python@v5
+    with: { python-version: "3.12" }
+  - run: pip install -r requirements.txt
+  - uses: iamAgbaCoder/pydoctor-cli@v2
+```
+
+Set `ci-only: "true"` to run only the secrets and workflow checks. Any CI system can use `pydoctor check --sarif pydoctor.sarif` directly.
+
+### Adopting it in an existing project: baselines
+
+```bash
+pydoctor baseline        # accept today's issues; commit .pydoctor-baseline.json
+pydoctor check           # now fails only on new issues
+```
+
+Problems with the scan itself (unreadable environment, unreachable vulnerability database) are never baselined.
+
+### pre-commit
+
+```yaml
+repos:
+  - repo: https://github.com/iamAgbaCoder/pydoctor-cli
+    rev: v2.3.0
+    hooks:
+      - id: pydoctor-ci      # blocks commits that add secrets or risky workflows
+```
+
 ### Automated Fixes
 
 Let PyDoctor perform the heavy lifting. It will offer to install missing packages, upgrade outdated ones, and clean up your environment.
@@ -84,6 +122,15 @@ pydoctor fix
 ---
 
 ## Release History
+
+### v2.3.0
+Built for CI: adopt pydoctor in an existing project without a wall of failures, and see findings where you review code.
+
+- **Baselines:** `pydoctor baseline` records today's issues in `.pydoctor-baseline.json`; scans then fail only on new ones and tell you when baselined issues are fixed. Fingerprints survive unrelated edits (a secret moved down by new lines stays known) and package upgrades. `--ci` updates only the CI-guard entries. `--baseline FILE` / `--no-baseline` on every scan command. Broken scans are never baselined.
+- **SARIF output:** `--sarif FILE` on every scan command (SARIF 2.1.0, schema-validated). Vulnerabilities carry their CVSS score as security severity and point at the line that declares the package; secrets and workflow findings point at their file and line.
+- **GitHub Action:** `uses: iamAgbaCoder/pydoctor-cli@v2` installs pydoctor in isolation, uploads findings to code scanning, and fails the job on new problems.
+- **pre-commit hooks:** `pydoctor-ci` blocks commits that add secrets, `.env` files or risky workflows; `pydoctor-check` runs the full scan at pre-push.
+- **Docs links:** every issue links to its page on pydoctor-docs.thally.app (`docs_url` in JSON; shown in the terminal for errors).
 
 ### v2.2.0
 Results you can trust: every fix in this release removes a case where PyDoctor reported a problem as fine, or got a severity wrong.

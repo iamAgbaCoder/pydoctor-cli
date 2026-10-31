@@ -1,0 +1,23 @@
+# pre-commit hooks for pydoctor-cli. See https://pre-commit.com
+#
+# pydoctor-ci: secrets and workflow checks. Runs in its own environment and
+# doesn't need your project's dependencies or network access.
+- id: pydoctor-ci
+  name: pydoctor (secrets and CI/CD guard)
+  description: Block commits that add secrets, .env files or risky GitHub Actions workflows.
+  entry: pydoctor check --ci
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit, pre-push]
+
+# pydoctor-check: the full scan, using the pydoctor you installed yourself so
+# it scans your project's environment. Needs network access. Best at pre-push.
+- id: pydoctor-check
+  name: pydoctor (full scan)
+  description: Full pydoctor scan of the project's environment before pushing.
+  entry: pydoctor check
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
