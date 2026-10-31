@@ -1,0 +1,80 @@
+name: "pydoctor"
+description: "Scan a Python project for vulnerable, conflicting and unused dependencies, committed secrets and risky workflows."
+author: "Favour Bamgboye"
+branding:
+  icon: "activity"
+  color: "orange"
+
+inputs:
+  path:
+    description: "Project directory to scan."
+    default: "."
+  ci-only:
+    description: "Only run the CI/CD guard (secrets and workflow checks). Doesn't need the project's dependencies installed."
+    default: "false"
+  python:
+    description: "Python interpreter of the project. Default: auto-detect (the setup-python interpreter on PATH)."
+    default: ""
+  args:
+    description: "Extra arguments passed to `pydoctor check`, e.g. `--no-baseline`."
+    default: ""
+  version:
+    description: "pydoctor-cli version to install: an exact version (2.3.0), `local` to install from this action's source, or empty to match the action's tag (v2 → latest 2.x)."
+    default: ""
+  sarif-file:
+    description: "Where to write the SARIF report."
+    default: "pydoctor.sarif"
+  upload-sarif:
+    description: "Upload the SARIF report to GitHub code scanning. Needs `permissions: security-events: write`."
+    default: "true"
+  fail-on-findings:
+    description: "Fail the step when pydoctor exits with code 1 (new error or critical issues, or score below min_health_score)."
+    default: "true"
+
+outputs:
+  exit-code:
+    description: "pydoctor's exit code (0 clean, 1 findings, 2 usage error)."
+    value: ${{ steps.scan.outputs.exit-code }}
+  sarif-file:
+    description: "Path of the SARIF report."
+    value: ${{ steps.scan.outputs.sarif-file }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install pydoctor (isolated)
+      id: install
+      shell: bash
+      env:
+        PYDOCTOR_VERSION: ${{ inputs.version }}
+        ACTION_REF: ${{ github.action_ref }}
+      run: bash "$GITHUB_ACTION_PATH/action/install.sh"
+
+    - name: Run pydoctor
+      id: scan
+      shell: bash
+      env:
+        PYDOCTOR_BIN: ${{ steps.install.outputs.bin }}
+        INPUT_PATH: ${{ inputs.path }}
+        INPUT_CI_ONLY: ${{ inputs.ci-only }}
+        INPUT_PYTHON: ${{ inputs.python }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+      run: bash "$GITHUB_ACTION_PATH/action/scan.sh"
+
+    - name: Upload SARIF to code scanning
+      if: ${{ always() && inputs.upload-sarif == 'true' && steps.scan.outputs.sarif-written == 'true' }}
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-file }}
+        category: pydoctor
+
+    - name: Fail on findings
+      if: ${{ inputs.fail-on-findings == 'true' && steps.scan.outputs.exit-code != '0' }}
+      shell: bash
+      env:
+        CODE: ${{ steps.scan.outputs.exit-code }}
+      run: |
+        echo "::error title=pydoctor::pydoctor exited with code $CODE. See the scan step for details."
+        exit "$CODE"
